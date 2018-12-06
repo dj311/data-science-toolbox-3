@@ -20,6 +20,9 @@ Example:
   2. Second, run svm and come up with the prediction: "warez or not warez".
     - Call them svm_is_warez.
   3. Run a classifier on the dataset, but with two new features.
+  
+  
+**TODO** Dan is going to get a start on implementing a random forest classifier as our "main" model for Saturday. See how far he gets.
 
 
 #### Note
