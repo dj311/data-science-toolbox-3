@@ -1,0 +1,133 @@
+---
+title: "Data Science Toolbox 3: Documentation"
+author: "Daniel Jones"
+output: html_notebook
+---
+
+```{r}
+library(data.table)
+library(ranger)
+library(caret)
+
+set.seed(0xC0FFEE)
+```
+
+Load in the data set:
+```{r}
+columns <- read.table(
+    "../data/kddcup.names",
+    sep=":",
+    skip=1,  # the first column name are the labels, but those are at the end!
+    as.is=T
+)
+column_names <- c(columns[,1], 'label')
+
+connection_events <- read.csv(
+    "../data/kddcup.data_10_percent.gz",
+    col.names=column_names
+)
+
+setDT(connection_events)  # convert from data.frame to data.table
+```
+
+
+# K-Fold Validation
+
+```{r}
+k_folds <- createFolds(connection_events$label, k=10)
+```
+
+This generates 10 sets of indices on the data. These are arranged such that similar amounts of each label are in each set.
+
+To use them for k-fold cross-validation:
+  1. Pick each fold one at a time.
+  2. Treat this as the indices of the testing set.
+  3. Select all other connection events as the training set.
+  4. Train your model and get your predictions from the test set.
+
+Example below with random forests.
+
+
+# Random Forests
+
+Basically just bagged decision trees? This `ranger` library is supposed to be a "speedy" implementation:
+
+```{r}
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+
+model <- ranger(
+    label~duration+service+src_bytes+dst_bytes+protocol_type,
+    data=training_data,
+    ## automatically selected since the 'label' column is a factor, but
+    ## leave this here for clarity:
+    classification=TRUE
+)
+```
+
+Only took a few minutes! Now, how to use it? Standard R I think (from the examples in the docs), i.e:
+
+```{r}
+predictions <- predict(model, data=testing_data)
+```
+Inspect this object a bit to find out what it looks like:
+
+```{r}
+names(predictions)
+```
+
+```{r}
+summary(predictions$predictions)
+```
+
+
+Make a confusion matrix to test it out:
+```{r}
+table(testing_data$label, predictions$predictions)
+```
+
+
+Repeat the above for all 10 folds:
+```{r}
+confusion_matrices <-lapply(k_folds, function(fold) {
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connection_events[training_indices]
+    testing_data <- connection_events[testing_indices]
+
+    model <- ranger(
+        label~duration+service+src_bytes+dst_bytes+protocol_type,
+        data=training_data,
+        ## automatically selected since the 'label' column is a factor, but
+        ## leave this here for clarity:
+        classification=TRUE
+    )
+
+    predictions <- predict(model, data=testing_data)
+
+    confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+    return(confusion_matrix)
+})
+```
+
+
+```{r}
+summary_matrix = Reduce('+', confusion_matrices)
+summary_matrix
+```
+
+To avoid re-running this everytime, save a copy of the results into a file:
+```{r}
+saveRDS(summary_matrix, file='../data/daniel-jones-random-forest-summary-matrix.rds')
+```
+
+It can be reloaded via:
+```{r}
+summary_matrix <- readRDS(file='../data/daniel-jones-random-forest-summary-matrix.rds')
+```
