@@ -125,12 +125,12 @@ summary_matrix
 
 To avoid re-running this everytime, save a copy of the results into a file:
 ```{r}
-saveRDS(summary_matrix, file='./data/daniel-jones-random-forest-summary-matrix.rds')
+saveRDS(summary_matrix, file='./data/daniel-jones-random-forest-summary-matrix-some-features.rds')
 ```
 
 The load it with:
 ```{r}
-summary_matrix <- readRDS(file='./data/daniel-jones-random-forest-summary-matrix.rds')
+summary_matrix <- readRDS(file='./data/daniel-jones-random-forest-summary-matrix-some-features.rds')
 ```
 
 Plot (TODO: needs some tweaking):
