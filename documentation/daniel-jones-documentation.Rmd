@@ -135,9 +135,11 @@ summary_matrix <- readRDS(file='./data/daniel-jones-random-forest-summary-matrix
 
 Plot (TODO: needs some tweaking):
 ```{r}
-ggplot(data=as.data.frame(summary_matrix), aes(x=Var1, y=Var2, fill=Freq), limits=c(0, 280790)) +
-    geom_raster() +
-    theme(axis.text.x=element_text(angle=90, hjust=1))
+ggplot(
+    data=as.data.frame(summary_matrix),
+    aes(x=Var1, y=Var2, fill=Freq),
+    limits=c(0, max(summary_matrix))
+) + geom_raster() + theme(axis.text.x=element_text(angle=90, hjust=1))
 ```
 
 
@@ -185,9 +187,11 @@ summary_matrix <- readRDS(file='./data/daniel-jones-random-forest-summary-matrix
 
 Plot (TODO: needs some tweaking):
 ```{r}
-ggplot(data=as.data.frame(summary_matrix), aes(x=Var1, y=Var2, fill=Freq), limits=c(0, 280790)) +
-    geom_raster() +
-    theme(axis.text.x=element_text(angle=90, hjust=1))
+ggplot(
+    data=as.data.frame(summary_matrix),
+    aes(x=Var1, y=Var2, fill=Freq),
+    limits=c(0, max(summary_matrix))
+) + geom_raster() + theme(axis.text.x=element_text(angle=90, hjust=1))
 ```
 
 
