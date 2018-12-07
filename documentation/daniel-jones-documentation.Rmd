@@ -141,8 +141,59 @@ ggplot(data=as.data.frame(summary_matrix), aes(x=Var1, y=Var2, fill=Freq), limit
 ```
 
 
+# Random Forest on all features
+
+Apply the random forest to all features:
+```{r}
+confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 25 minutes
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connection_events[training_indices]
+    testing_data <- connection_events[testing_indices]
+
+    model <- ranger(
+        label~.,
+        data=training_data,
+        ## automatically selected since the 'label' column is a factor, but
+        ## leave this here for clarity:
+        classification=TRUE
+    )
+
+    predictions <- predict(model, data=testing_data)
+
+    confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+    return(confusion_matrix)
+})
+```
+
+```{r}
+summary_matrix = Reduce('+', confusion_matrices)
+summary_matrix
+```
+
+To avoid re-running this everytime, save a copy of the results into a file:
+```{r}
+saveRDS(summary_matrix, file='./data/daniel-jones-random-forest-summary-matrix-all-features.rds')
+```
+
+The load it with:
+```{r}
+summary_matrix <- readRDS(file='./data/daniel-jones-random-forest-summary-matrix-all-features.rds')
+```
+
+Plot (TODO: needs some tweaking):
+```{r}
+ggplot(data=as.data.frame(summary_matrix), aes(x=Var1, y=Var2, fill=Freq), limits=c(0, 280790)) +
+    geom_raster() +
+    theme(axis.text.x=element_text(angle=90, hjust=1))
+```
+
+
+
 
 # TODO
-- [ ] Should probably run this on all factors (I was just lazy and didn't want to wait for it to finish).
+- [x] Should probably run this on all features (I was just lazy and didn't want to wait for it to finish).
 - [x] Plot a nice confusion matrix that will help us find out:
 - [ ] Where does this model perform the worst?
