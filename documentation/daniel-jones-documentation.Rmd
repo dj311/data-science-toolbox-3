@@ -94,7 +94,7 @@ table(testing_data$label, predictions$predictions)
 
 Repeat the above for all 10 folds:
 ```{r}
-confusion_matrices <-lapply(k_folds, function(fold) {
+confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 10 minutes
     training_indices <- -fold
     testing_indices <- fold
 
