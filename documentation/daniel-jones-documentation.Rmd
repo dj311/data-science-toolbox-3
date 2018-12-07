@@ -5,9 +5,10 @@ output: html_notebook
 ---
 
 ```{r}
-library(data.table)
-library(ranger)
 library(caret)
+library(data.table)
+library(ggplot2)
+library(ranger)
 
 set.seed(0xC0FFEE)
 ```
@@ -15,7 +16,7 @@ set.seed(0xC0FFEE)
 Load in the data set:
 ```{r}
 columns <- read.table(
-    "../data/kddcup.names",
+    "./data/kddcup.names",
     sep=":",
     skip=1,  # the first column name are the labels, but those are at the end!
     as.is=T
@@ -23,7 +24,7 @@ columns <- read.table(
 column_names <- c(columns[,1], 'label')
 
 connection_events <- read.csv(
-    "../data/kddcup.data_10_percent.gz",
+    "./data/kddcup.data_10_percent.gz",
     col.names=column_names
 )
 
@@ -124,16 +125,24 @@ summary_matrix
 
 To avoid re-running this everytime, save a copy of the results into a file:
 ```{r}
-saveRDS(summary_matrix, file='../data/daniel-jones-random-forest-summary-matrix.rds')
+saveRDS(summary_matrix, file='./data/daniel-jones-random-forest-summary-matrix.rds')
 ```
 
-It can be reloaded via:
+The load it with:
 ```{r}
-summary_matrix <- readRDS(file='../data/daniel-jones-random-forest-summary-matrix.rds')
+summary_matrix <- readRDS(file='./data/daniel-jones-random-forest-summary-matrix.rds')
 ```
+
+Plot (TODO: needs some tweaking):
+```{r}
+ggplot(data=as.data.frame(summary_matrix), aes(x=Var1, y=Var2, fill=Freq), limits=c(0, 280790)) +
+    geom_raster() +
+    theme(axis.text.x=element_text(angle=90, hjust=1))
+```
+
 
 
 # TODO
-- Should probably run this on all factors (I was just lazy and didn't want to wait for it to finish).
-- Plot a nice confusion matrix that will help us find out:
-- Where does this model perform the worst?
+- [ ] Should probably run this on all factors (I was just lazy and didn't want to wait for it to finish).
+- [x] Plot a nice confusion matrix that will help us find out:
+- [ ] Where does this model perform the worst?
