@@ -131,3 +131,9 @@ It can be reloaded via:
 ```{r}
 summary_matrix <- readRDS(file='../data/daniel-jones-random-forest-summary-matrix.rds')
 ```
+
+
+# TODO
+- Should probably run this on all factors (I was just lazy and didn't want to wait for it to finish).
+- Plot a nice confusion matrix that will help us find out:
+- Where does this model perform the worst?
