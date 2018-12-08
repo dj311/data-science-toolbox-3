@@ -1,7 +1,9 @@
 ---
-title: "Data Science Toolbox 3: Documentation"
+title: 'Data Science Toolbox 3: Documentation'
 author: "Daniel Jones"
-output: html_notebook
+output:
+  pdf_document: default
+  html_notebook: default
 ---
 
 ```{r}
@@ -16,7 +18,7 @@ set.seed(0xC0FFEE)
 Load in the data set:
 ```{r}
 columns <- read.table(
-    "./data/kddcup.names",
+    "../data/kddcup.names",
     sep=":",
     skip=1,  # the first column name are the labels, but those are at the end!
     as.is=T
@@ -24,7 +26,7 @@ columns <- read.table(
 column_names <- c(columns[,1], 'label')
 
 connection_events <- read.csv(
-    "./data/kddcup.data_10_percent.gz",
+    "../data/kddcup.data_10_percent.gz",
     col.names=column_names
 )
 
@@ -125,12 +127,12 @@ summary_matrix
 
 To avoid re-running this everytime, save a copy of the results into a file:
 ```{r}
-saveRDS(summary_matrix, file='./data/daniel-jones-random-forest-summary-matrix-some-features.rds')
+saveRDS(summary_matrix, file='../data/daniel-jones-random-forest-summary-matrix-some-features.rds')
 ```
 
 The load it with:
 ```{r}
-summary_matrix <- readRDS(file='./data/daniel-jones-random-forest-summary-matrix-some-features.rds')
+summary_matrix <- readRDS(file='../data/daniel-jones-random-forest-summary-matrix-some-features.rds')
 ```
 
 Plot (TODO: needs some tweaking):
@@ -177,12 +179,12 @@ summary_matrix
 
 To avoid re-running this everytime, save a copy of the results into a file:
 ```{r}
-saveRDS(summary_matrix, file='./data/daniel-jones-random-forest-summary-matrix-all-features.rds')
+saveRDS(summary_matrix, file='../data/daniel-jones-random-forest-summary-matrix-all-features.rds')
 ```
 
 The load it with:
 ```{r}
-summary_matrix <- readRDS(file='./data/daniel-jones-random-forest-summary-matrix-all-features.rds')
+summary_matrix <- readRDS(file='../data/daniel-jones-random-forest-summary-matrix-all-features.rds')
 ```
 
 Plot (TODO: needs some tweaking):
