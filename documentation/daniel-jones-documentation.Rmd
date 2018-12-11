@@ -11,6 +11,10 @@ documentclass: amsart
 monofont: "Source Code Pro"
 ---
 
+```{r setup}
+knitr::opts_knit$set(root.dir='../')
+```
+
 ```{r}
 knitr::opts_knit$set(root.dir='../')
 
