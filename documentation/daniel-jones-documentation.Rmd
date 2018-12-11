@@ -248,7 +248,7 @@ plot_confusion_matrix <- function(confusion_matrix) {
     labels <- sapply(breaks, function(break_value) sprintf("%.0f", break_value))
 
     confusion_matrix <- as.data.table(confusion_matrix)
-    colnames(confusion_matrix) <- c('True', 'Predicted', 'Frequency')
+    colnames(confusion_matrix) <- c('Predicted', 'True', 'Frequency')
 
     plot <- ggplot(
             data=confusion_matrix,
