@@ -252,7 +252,7 @@ plot_confusion_matrix <- function(confusion_matrix) {
 
     plot <- ggplot(
             data=confusion_matrix,
-            aes(x=True, y=Predicted, fill=Frequency),
+            aes(x=Predicted, y=True, fill=Frequency),
             limits=c(0, max(confusion_matrix))
     ) +
         geom_raster() +
