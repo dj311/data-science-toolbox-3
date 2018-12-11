@@ -1,0 +1,46 @@
+---
+title: "Data Science Toolbox 3: Report"
+author: "Junfan Huang and Daniel Jones"
+date: "10/12/2018"
+output:
+  pdf_document:
+    toc: false
+    df_print: kable
+    latex_engine: xelatex
+geometry: margin=2cm
+documentclass: amsart
+monofont: "Source Code Pro"
+---
+
+```{r setup, include=FALSE}
+library(caret)
+library(data.table)
+library(ggplot2)
+library(ranger)
+library(knitr)
+
+set.seed(0xC0FFEE)
+
+knitr::opts_knit$set(root.dir='../')
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+```{r load_data_set, include=FALSE}
+columns <- read.table(
+    "../data/kddcup.names",
+    sep=":",
+    skip=1,  # the first column name are the labels, but those are at the end!
+    as.is=T
+)
+column_names <- c(columns[,1], 'label')
+
+connection_events <- read.csv(
+    "../data/kddcup.data_10_percent.gz",
+    col.names=column_names
+)
+
+setDT(connection_events)  # convert from data.frame to data.table
+```
+
+
+Introduction...
