@@ -11,13 +11,7 @@ documentclass: amsart
 monofont: "Source Code Pro"
 ---
 
-```{r setup}
-knitr::opts_knit$set(root.dir='../')
-```
-
-```{r}
-knitr::opts_knit$set(root.dir='../')
-
+```{r setup, include=FALSE}
 library(caret)
 library(data.table)
 library(ggplot2)
@@ -25,6 +19,9 @@ library(ranger)
 library(knitr)
 
 set.seed(0xC0FFEE)
+
+knitr::opts_knit$set(root.dir='../')
+knitr::opts_chunk$set(echo=TRUE)
 ```
 
 Load in the data set:
@@ -102,8 +99,21 @@ summary(predictions$predictions)
 
 Make a confusion matrix to test it out:
 ```{r}
-kable(table(testing_data$label, predictions$predictions))
+confusion_matrix <- table(testing_data$label, predictions$predictions)
+kable(confusion_matrix)
 ```
+
+```{r}
+ggplot(
+        data=as.data.frame(confusion_matrix+1),
+        aes(x=Var1, y=Var2, fill=Freq),
+        limits=c(0, max(confusion_matrix))
+    ) +
+    scale_fill_gradient(name="count", trans="log") +
+    geom_raster() +
+    theme(axis.text.x=element_text(angle=90, hjust=1))
+```
+
 
 
 Repeat the above for all 10 folds:
@@ -219,9 +229,43 @@ ggplot(
 ```
 
 
+We will use this random forest as our baseline, and use stacking to improve it's performance.
+
+
+
+## Plotting Confusion Matrices for inconsistent class sizings
+
+The plots above aren't very helpful, because the three few classes dominate the data set (neptune, normal and smurf) have much larger numbers.
+
+Ideally we should normalize the values and control for the group sizings, but what does that mean in the context of a confusion matrix? We can't just divide by the group size, since each cell represents the relationship between two groups. Instead, divide the sum of both groups true sizes:
+
+
+Instead, to help visualise and identify problems with the classifier, plot $$log(C_{,j} + 1)$$:
+
+```{r}
+plot_confusion_matrix <- function(confusion_matrix) {
+    breaks <- c(0, 1, 10, 100, 1000, 10000) * max(confusion_matrix) / 10000
+    labels <- sapply(breaks, function(break_value) sprintf("%.0f", break_value))
+
+    confusion_matrix <- as.data.table(confusion_matrix)
+    colnames(confusion_matrix) <- c('True', 'Predicted', 'Frequency')
+
+    plot <- ggplot(
+            data=confusion_matrix,
+            aes(x=True, y=Predicted, fill=Frequency),
+            limits=c(0, max(confusion_matrix))
+    ) +
+        geom_raster() +
+        theme(axis.text.x=element_text(angle=90, hjust=1)) +
+        scale_fill_gradient(name="Frequency", trans = "log1p", breaks=breaks, labels=labels)
+
+   return(plot)
+}
+plot_confusion_matrix(summary_matrix)
+```
 
 
 # TODO
 - [x] Should probably run this on all features (I was just lazy and didn't want to wait for it to finish).
 - [x] Plot a nice confusion matrix that will help us find out:
-- [ ] Where does this model perform the worst?
+- [x] Where does this model perform the worst?
