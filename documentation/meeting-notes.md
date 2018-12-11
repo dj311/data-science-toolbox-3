@@ -1,5 +1,9 @@
 # Meeting notes
 
+## 2018-12-05
+
+We looked into the feasibility of modelling as point-processes. We don't have a time axis, and the nodes aren't identified so it isn't doable.
+
 ## 2018-12-06
 
 Potential approach:
