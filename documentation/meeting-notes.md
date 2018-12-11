@@ -24,8 +24,8 @@ Example:
   2. Second, run svm and come up with the prediction: "warez or not warez".
     - Call them svm_is_warez.
   3. Run a classifier on the dataset, but with two new features.
-  
-  
+
+
 **TODO** Dan is going to get a start on implementing a random forest classifier as our "main" model for Saturday. See how far he gets.
 
 
@@ -35,3 +35,30 @@ We also considered doing straight stacking, i.e:
   2. Second, run svm and come up with `malicious vs non-malicious` predictions. Call them `svm_label`.
   3. Now we have original 41 features + 2 new ones `knn_label` and `svm_label`.
   4. Run a classifier on all 43 features.
+
+
+
+## 2018-12-11
+
+We looked at the confusion matrix from [the random forest classifier](./daniel-jones-documentation.md#Random forest on all features) and analysed it as follows:
+
+
+### Things we've noticed from this plot:
+
+1. The only errors for the smurf category are when we predict normal but it's actually smurf.
+  - Junfan plotted them with tsne dimenonsality reduction to plot in two axes, which showed three main clusters, and some point which are spread out. Are these the outliers? If so, can we add a step which identifies them?
+2. There are far more situations where we predict as normal, but it's actually malicious than the other way round.
+  - This isn't good, can we reduce it?
+
+
+### Things we want to do
+
+Junfan came up with some cool ideas:
+
+1. Use K-means to find arbitrary groupings/clusters.
+2. Add "attack types" as a label, e.g: smurf is DOS, portsweep is probing, etc.
+
+Compare performance of 1 and 2. Then, use both of these as pre-processing for random forest. See which one gives best performance overall.
+
+
+We also decided that we are going to use this random forest as our "baseline classifier" as required by the assessment spec.
