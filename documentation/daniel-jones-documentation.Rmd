@@ -390,14 +390,21 @@ So:
   - In general, a large number of our mistakes are mis-identifications of normal traffic (or the other way round). Could we train something with the focus of identifying normal, non-malicious traffic? does this have any meaningfull difference to identifying malicious traffic (the subject of our previous assignment)?
 
 
-Zoom out at these and look at the particular causes:
+Consider each of these cases in detail:
+
+  1. Mis-identification within the `probe` category:
+
 ```{r}
-classification_errors[predicted_category=='probe.' & true_category=='probe.']
+    classification_errors[predicted_category=='probe.' & true_category=='probe.']
 ```
+
+  2. False predictions of malicious traffic as non-malicious:
 
 ```{r}
 classification_errors[predicted_category=='normal.']
 ```
+
+  3. False predictions of non-malicious traffic as malicious:
 
 ```{r}
 classification_errors[true_category=='normal.']
