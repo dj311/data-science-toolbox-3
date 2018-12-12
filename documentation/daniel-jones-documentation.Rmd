@@ -52,6 +52,7 @@ k_folds <- createFolds(connection_events$label, k=10)
 This generates 10 sets of indices on the data. These are arranged such that similar amounts of each label are in each set.
 
 To use them for k-fold cross-validation:
+
   1. Pick each fold one at a time.
   2. Treat this as the indices of the testing set.
   3. Select all other connection events as the training set.
@@ -299,11 +300,13 @@ classification_errors <- summary_table[predicted!=true & frequency > 0][order(-f
 classification_errors
 ```
 From this table we can see:
+
   1. Our basline model is pretty good!
   2. The major sources of error are false positives with
 
 
 From task description:
+
 > Attacks fall into four main categories:
 >  - DOS: denial-of-service, e.g. syn flood;
 >  - R2L: unauthorized access from a remote machine, e.g. guessing password;
@@ -385,6 +388,7 @@ plot_frequency_table(errors_by_category)
 ```
 
 So:
+
   - If we could better distinguish attacks within the probe category, our classifier would do much better.
   - Mistaking normal with r2l and vica versa is an issue. Can we train something to better distinguish those two categories?
   - In general, a large number of our mistakes are mis-identifications of normal traffic (or the other way round). Could we train something with the focus of identifying normal, non-malicious traffic? does this have any meaningfull difference to identifying malicious traffic (the subject of our previous assignment)?
@@ -401,13 +405,13 @@ Consider each of these cases in detail:
   2. False predictions of malicious traffic as non-malicious:
 
 ```{r}
-classification_errors[predicted_category=='normal.']
+    classification_errors[predicted_category=='normal.']
 ```
 
   3. False predictions of non-malicious traffic as malicious:
 
 ```{r}
-classification_errors[true_category=='normal.']
+    classification_errors[true_category=='normal.']
 ```
 
 
