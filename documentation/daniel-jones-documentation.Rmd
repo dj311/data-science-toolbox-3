@@ -243,6 +243,16 @@ Ideally we should normalize the values and control for the group sizings, but wh
 Instead, to help visualise and identify problems with the classifier, plot $$log(C_{,j} + 1)$$:
 
 ```{r}
+
+# Define a function for this to make sure all of our confusion matrices use
+# consistent labelling and axis' for true/predicted classes.
+make_confusion_matrix <- function(true_values, predicted_values) {
+    table(true_values, predicted_values)
+}
+
+# Define a function to plot a confusion matrix with a logarithm axis (well,
+# log(x+1) to ensure 0 maps to 0). Expects the format output by the
+# make_confusion_matrix function above.
 plot_confusion_matrix <- function(confusion_matrix) {
     breaks <- c(0, 1, 10, 100, 1000, 10000) * max(confusion_matrix) / 10000
     labels <- sapply(breaks, function(break_value) sprintf("%.0f", break_value))
@@ -261,7 +271,136 @@ plot_confusion_matrix <- function(confusion_matrix) {
 
    return(plot)
 }
+
+# Example:
 plot_confusion_matrix(summary_matrix)
+```
+
+
+Plot the confusion matrix _without_ the `smurf` columns
+
+```{r}
+summary_matrix_without_smurf <- summary_matrix[
+    rownames(summary_matrix) != 'smurf.',
+    colnames(summary_matrix) != 'smurf.'
+]
+plot_confusion_matrix(summary_matrix_without_smurf)
+```
+
+What are greatest source of error in this model?
+
+```{r}
+# Transform confusion matrix into a data table:
+summary_table <- as.data.table(summary_matrix)
+colnames(summary_table) <- c('predicted', 'true', 'frequency')
+
+# Find errors, and find the most common:
+classification_errors <- summary_table[predicted!=true & frequency > 0][order(-frequency)]
+classification_errors
+```
+From this table we can see:
+  1. Our basline model is pretty good!
+  2. The major sources of error are false positives with
+
+
+From task description:
+> Attacks fall into four main categories:
+>  - DOS: denial-of-service, e.g. syn flood;
+>  - R2L: unauthorized access from a remote machine, e.g. guessing password;
+>  - U2R:  unauthorized access to local superuser (root) privileges, e.g., various ``buffer overflow'' attacks;
+>  - probing: surveillance and other probing, e.g., port scanning.
+
+
+Annotate the above table with the attack categories:
+```{r}
+attack_categories <- fread(
+    './data/training_attack_types',
+    col.names=c('attack', 'category')
+)
+# Make these attack names consistent with the main data set
+attack_categories$attack <- sapply(
+    attack_categories$attack,
+    function(name) paste(name, '.', sep='')
+)
+attack_categories$category <- sapply(
+    attack_categories$category,
+    function(name) paste(name, '.', sep='')
+)
+# `normal` isn't really an attack, but add it as it's own
+# category
+attack_categories <- rbind(
+    attack_categories,
+    list('normal.', 'normal.')
+)
+```
+
+
+```{r}
+# What is `back`? It isn't defined in the task description
+# or any other documentation I can find.
+attack_categories <- rbind(
+    attack_categories,
+    list('back.', 'back.')
+)
+
+predicted_categories <- sapply(
+    classification_errors$predicted,
+    function(name) attack_categories[attack==name]$category
+)
+true_categories <- sapply(
+    classification_errors$true,
+    function(name) attack_categories[attack==name]$category
+)
+
+classification_errors$predicted_category <- predicted_categories
+classification_errors$true_category <- true_categories
+```
+
+```{r}
+errors_by_category <- classification_errors[
+   ,
+   .(frequency=sum(frequency)),
+   by=.(predicted_category, true_category)
+]
+errors_by_category
+```
+
+```{r}
+plot_frequency_table <- function(freq_table) {
+    colnames(freq_table) <- c('Predicted', 'True', 'Frequency')
+
+    # TODO: fill in gaps
+    all_classes <- union(freq_table$Predicted, freq_table$True)
+
+    plot <- ggplot(data=freq_table) +
+        lims(fill=c(0, max(freq_table$Frequency))) +
+        aes(x=Predicted, y=True, fill=Frequency) +
+        geom_raster() +
+        theme(axis.text.x=element_text(angle=90, hjust=1))
+
+    return(plot)
+}
+
+plot_frequency_table(errors_by_category)
+```
+
+So:
+  - If we could better distinguish attacks within the probe category, our classifier would do much better.
+  - Mistaking normal with r2l and vica versa is an issue. Can we train something to better distinguish those two categories?
+  - In general, a large number of our mistakes are mis-identifications of normal traffic (or the other way round). Could we train something with the focus of identifying normal, non-malicious traffic? does this have any meaningfull difference to identifying malicious traffic (the subject of our previous assignment)?
+
+
+Zoom out at these and look at the particular causes:
+```{r}
+classification_errors[predicted_category=='probe.' & true_category=='probe.']
+```
+
+```{r}
+classification_errors[predicted_category=='normal.']
+```
+
+```{r}
+classification_errors[true_category=='normal.']
 ```
 
 
@@ -269,3 +408,5 @@ plot_confusion_matrix(summary_matrix)
 - [x] Should probably run this on all features (I was just lazy and didn't want to wait for it to finish).
 - [x] Plot a nice confusion matrix that will help us find out:
 - [x] Where does this model perform the worst?
+- [ ] Develop classifier focused on probe category specifically.
+- [ ] Develop classifier focused on r2l vs normal.
