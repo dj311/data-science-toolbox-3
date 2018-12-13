@@ -14,15 +14,27 @@ monofont: "Source Code Pro"
 ```{r setup, include=FALSE}
 library(caret)
 library(data.table)
+library(e1071)
 library(ggplot2)
 library(ranger)
 library(knitr)
+
 
 set.seed(0xC0FFEE)
 
 knitr::opts_knit$set(root.dir='../')
 knitr::opts_chunk$set(echo=TRUE)
 ```
+
+# TODO
+- [x] Should probably run this on all features (I was just lazy and didn't want to wait for it to finish).
+- [x] Plot a nice confusion matrix that will help us find out:
+- [x] Where does this model perform the worst?
+- [ ] Develop classifier focused on probe category specifically.
+- [ ] Develop classifier focused on r2l vs normal.
+
+
+# Setup
 
 Load in the data set:
 ```{r}
@@ -415,9 +427,97 @@ Consider each of these cases in detail:
 ```
 
 
-# TODO
-- [x] Should probably run this on all features (I was just lazy and didn't want to wait for it to finish).
-- [x] Plot a nice confusion matrix that will help us find out:
-- [x] Where does this model perform the worst?
-- [ ] Develop classifier focused on probe category specifically.
-- [ ] Develop classifier focused on r2l vs normal.
+# 1. Classifying Probe Attacks
+
+## What is a probing attack? Are their any distinguishing features?
+
+< insert nmap and ip-sweep diagrams >
+
+nmap description from website (https://nmap.org/):
+
+> Nmap uses raw IP packets in novel ways to determine what hosts are available on the network, what services (application name and version) those hosts are offering, what operating systems (and OS versions) they are running, what type of packet filters/firewalls are in use, and dozens of other characteristics. It was designed to rapidly scan large networks, but works fine against single hosts.
+
+
+Make a copy of the data, but group all non-probe attacks together:
+```{r}
+probe_connection_events <- copy(connection_events)
+
+probe_attacks <- attack_categories[category=='probe.']$attack
+
+levels(probe_connection_events$label) <- c(
+    levels(probe_connection_events$label),
+    as.factor('non-probe.')
+)
+probe_connection_events$label <- sapply(
+    X=probe_connection_events$label,
+    FUN=function(label) if (label %in% probe_attacks) label else as.factor('non-probe.')
+)
+
+unique(probe_connection_events$label)
+```
+
+
+```{r}
+train <- probe_connection_events[-k_folds[[1]]]
+test <- probe_connection_events[k_folds[[1]]]
+
+probe_model <- naiveBayes(label~., data=train)
+probe_predictions <- predict(nb_model, test)
+
+confusion_matrix <- make_confusion_matrix(test$label, probe_predictions)
+plot_confusion_matrix(confusion_matrix)
+```
+
+
+```{r}
+get_classification_errors <- function(confusion_matrix) {
+    confusion_table <- as.data.table(confusion_matrix)
+    colnames(confusion_table) <- c('predicted', 'true', 'frequency')
+    confusion_table[predicted!=true & frequency > 0][order(-frequency)]
+}
+```
+
+
+```{r eval=FALSE}
+confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 30 minutes
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- probe_connection_events[training_indices]
+    testing_data <- probe_connection_events[testing_indices]
+
+    model <- naiveBayes(label~., data=training_data)
+
+    predictions <- predict(model, testing_data)
+
+    confusion_matrix <- table(testing_data$label, predictions)
+
+    return(confusion_matrix)
+})
+
+summary_matrix = Reduce('+', confusion_matrices)
+```
+
+```{r include=FALSE, eval=FALSE}
+saveRDS(
+    summary_matrix,
+    file='./data/daniel-jones-random-forest-naive-bayes-summary-matrix.rds'
+)
+```
+
+```{r include=FALSE, eval=TRUE}
+summary_matrix <- readRDS(
+  file='./data/daniel-jones-random-forest-naive-bayes-summary-matrix.rds'
+)
+```
+
+
+```{R}
+plot_confusion_matrix(summary_matrix)
+get_classification_errors(summary_matrix)
+```
+
+Naive bayes assumes dataset is gaussian, so this makes us think that the data set isn't! Let's try something else.
+
+k_means_1 adds a lot distingushing information 
+
