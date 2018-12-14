@@ -12,3 +12,6 @@ The numumber of different types of data
 ```
 
 For this unbalanced size, we should definitely do something...
+1. Add data from other dataset<br>
+2. Anomaly detection?
+3. Add weight for some categories.
