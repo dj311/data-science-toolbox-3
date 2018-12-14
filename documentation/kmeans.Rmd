@@ -2,7 +2,6 @@
 title: "kmeans"
 output: html_document
 ---
-如果kmeans分类4类的结果
 
 ```{r setup, include=FALSE}
 if (!require("pacman")) install.packages("pacman")
