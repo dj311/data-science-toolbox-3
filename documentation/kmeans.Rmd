@@ -1,0 +1,222 @@
+---
+title: "kmeans"
+output: html_document
+---
+如果kmeans分类4类的结果
+
+```{r setup, include=FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(caret, data.table, ggplot2, ranger, magrittr, dplyr, BBmisc)
+```
+
+## load the data for a few seconds
+
+
+```{r}
+columns <- read.table(
+    "../data/kddcup.names",
+    sep=":",
+    skip=1,  # the first column name are the labels, but those are at the end!
+    as.is=T
+)
+column_names <- c(columns[,1], 'label')
+
+connection_events <- read.csv(
+    "../data/kddcup.data_10_percent.gz",
+    col.names=column_names
+)
+
+type <- read.table(
+  "http://kdd.ics.uci.edu/databases/kddcup99/training_attack_types",
+  sep=" ",
+  skip=1
+)
+fourt = factor(type[[2]])
+type[[2]]=="r2l"
+
+setDT(connection_events)  # convert from data.frame to data.table
+```
+
+
+## This code changes strings into number and normalizes the whole data for kmeans classification.
+
+
+```{r}
+connection_events$protocol_type <- as.integer(factor(connection_events$protocol_type))
+connection_events$service <- as.integer(factor(connection_events$service))
+connection_events$flag <- as.integer(factor(connection_events$flag))
+kmeansdata <- connection_events[,1:41]
+kmeansdata <- normalize(kmeansdata, method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
+```
+
+## K-means: 5 catogries(Trying to devided the attacks type into 4 automatically)
+
+```{r}
+set.seed(20)
+Cluster <- kmeans(kmeansdata, 5, nstart = 20)
+```
+
+
+## Add new features or new columns namely is_kmeans_1, is_kmeans_2, ..., is_kmeans_5 and creating new variables named kmeans_1, kmeans_2, ..., kmeans_5
+
+```{r}
+
+for(i in 1:5){
+  name = paste0("is_kmeans",i)
+  connection_events[[name]]<- as.integer(Cluster$`cluster`==i)
+}
+
+for(i in 1:5){
+  variablename = paste("kmeans", i, sep = "_")
+  columnname = paste("is_kmeans", i, sep = "_")
+  assign(variablename, connection_events[connection_events$columnname==1])
+}
+
+```
+
+## another variable for kmeans 20 catogries
+
+## K-means: 20 catogries (to find some features are new which may be really good for finging features inportance)
+
+```{r}
+set.seed(20)
+Cluster1 <- kmeans(kmeansdata, 20, nstart = 20)
+```
+
+## Add new features
+
+```{r}
+model_20 <- connection_events[,c(1:42)]
+for(i in 1:20){
+  name = paste0("is_kmeans_20_",i)
+  model_20[[name]]<- as.integer(Cluster1$`cluster`==i)
+}
+saveRDS(summary_matrix, file='../data/Kmeans-20-features.rds')
+
+```
+
+# K-Fold Validation
+
+```{r}
+model20 <- model_20[,c(42:62)]
+k_folds <- createFolds(model_20$label, k=10)
+```
+
+This generates 10 sets of indices on the data. These are arranged such that similar amounts of each label are in each set.
+
+To use them for k-fold cross-validation:
+  1. Pick each fold one at a time.
+  2. Treat this as the indices of the testing set.
+  3. Select all other connection events as the training set.
+  4. Train your model and get your predictions from the test set.
+
+Example below with random forests.
+
+
+# Random Forests
+
+Training for all 10 folds:
+```{r}
+confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 10 minutes
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connection_events[training_indices]
+    testing_data <- connection_events[testing_indices]
+
+    model <- ranger(
+        label~.,
+        data=training_data,
+        ## automatically selected since the 'label' column is a factor, but
+        ## leave this here for clarity:
+        classification=TRUE
+    )
+
+    predictions <- predict(model, data=testing_data)
+
+    confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+    return(confusion_matrix)
+})
+```
+
+```{r}
+confusion_matrices
+```
+
+
+```{r}
+summary_matrix = Reduce('+', confusion_matrices)
+summary_matrix
+```
+
+```{r}
+saveRDS(summary_matrix, file='../data/20-kmeans-summary-matrix-all-features.rds')
+
+```
+
+```{r}
+
+
+# Define a function for this to make sure all of our confusion matrices use
+
+# consistent labelling and axis' for true/predicted classes.
+
+make_confusion_matrix <- function(true_values, predicted_values) {
+
+    table(true_values, predicted_values)
+
+}
+
+
+
+# Define a function to plot a confusion matrix with a logarithm axis (well,
+
+# log(x+1) to ensure 0 maps to 0). Expects the format output by the
+
+# make_confusion_matrix function above.
+
+plot_confusion_matrix <- function(confusion_matrix) {
+
+    breaks <- c(0, 1, 10, 100, 1000, 10000) * max(confusion_matrix) / 10000
+
+    labels <- sapply(breaks, function(break_value) sprintf("%.0f", break_value))
+
+
+
+    confusion_matrix <- as.data.table(confusion_matrix)
+
+    colnames(confusion_matrix) <- c('Predicted', 'True', 'Frequency')
+
+
+
+    plot <- ggplot(
+
+            data=confusion_matrix,
+
+            aes(x=Predicted, y=True, fill=Frequency),
+
+            limits=c(0, max(confusion_matrix))
+
+    ) +
+
+        geom_raster() +
+
+        theme(axis.text.x=element_text(angle=90, hjust=1)) +
+
+        scale_fill_gradient(name="Frequency", trans = "log1p", breaks=breaks, labels=labels)
+
+
+
+   return(plot)
+
+}
+
+
+
+# Example:
+
+plot_confusion_matrix(summary_matrix)
+```
+
+
