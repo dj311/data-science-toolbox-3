@@ -73,8 +73,6 @@ for(i in 1:5){
 
 ```
 
-## another variable for kmeans 20 catogries
-
 ## K-means: 20 catogries (to find some features are new which may be really good for finging features inportance)
 
 ```{r}
