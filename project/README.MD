@@ -39,6 +39,6 @@ https://www.quora.com/In-classification-how-do-you-handle-an-unbalanced-training
 
 
 Two ways for imbalanced problem:
-1. kmeans get 54 centers for all four types
+1. kmeans get 20 centers for all four types (did not converge in 10 iterations: normal)
 2. from normal to detect the abnormal events
 
