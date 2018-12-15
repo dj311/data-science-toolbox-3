@@ -32,6 +32,8 @@ Generally, just probe's data increases
 > length(which(connection_events$type==4))
 [1] 54
 > ```
+For training 4 types data, the confusion matrix shows that it has a good performance for classifing the dos, normal and probe events. However, for u2r which has 52 events only, the performance is terrible. How to improve it?
+
 Look this tomorrow
 https://www.quora.com/In-classification-how-do-you-handle-an-unbalanced-training-set
 
