@@ -37,3 +37,8 @@ For training 4 types data, the confusion matrix shows that it has a good perform
 Look this tomorrow
 https://www.quora.com/In-classification-how-do-you-handle-an-unbalanced-training-set
 
+
+Two ways for imbalanced problem:
+1. kmeans get 54 centers for all four types
+2. from normal to detect the abnormal events
+
