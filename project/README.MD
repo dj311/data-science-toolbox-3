@@ -46,13 +46,14 @@ Two ways for imbalanced problem:
   probe     113      0   3579      2      3
   r2l         9      0     45    878     82
   u2r         0      0      0      0     49
-  Terrible results compared with
+  Terrible results compared with(although the predicted normal are 100% normal)
               dos normal  probe    r2l    u2r
   dos    350323      3      2      1      0
   normal      4  89514      4      8      1
   probe       0     20   3677      0      0
   r2l         1     29      0    982      2
   u2r         0     17      0      2     30
+  
   
 2. from normal to detect the abnormal events
 
