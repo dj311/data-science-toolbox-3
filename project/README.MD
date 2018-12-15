@@ -17,7 +17,7 @@ For this unbalanced size, we should definitely do something...
 3. Add weights for some categories have less number?
 
 1. Try to resize the data size by using the whole dataset, but for type 3 and 4... 
-Generally, just probe's data increase
+Generally, just probe's data increases
 ```
 #Levels: dos probe r2l u2r
 
