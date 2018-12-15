@@ -40,5 +40,19 @@ https://www.quora.com/In-classification-how-do-you-handle-an-unbalanced-training
 
 Two ways for imbalanced problem:
 1. kmeans get 20 centers for all four types (did not converge in 10 iterations: normal)
+           dos normal  probe    r2l    u2r
+  dos    331558      0  18754      5     12
+  normal   1295   6419  14828   5244  61745
+  probe     113      0   3579      2      3
+  r2l         9      0     45    878     82
+  u2r         0      0      0      0     49
+  Terrible results compared with
+              dos normal  probe    r2l    u2r
+  dos    350323      3      2      1      0
+  normal      4  89514      4      8      1
+  probe       0     20   3677      0      0
+  r2l         1     29      0    982      2
+  u2r         0     17      0      2     30
+  
 2. from normal to detect the abnormal events
 
