@@ -517,7 +517,7 @@ plot_confusion_matrix(summary_matrix)
 get_classification_errors(summary_matrix)
 ```
 
-Naive bayes assumes dataset is gaussian, so this makes us think that the data set isn't! Let's try something else.
+Naive bayes assumes dataset is gaussian and indepentent, so this makes us think that the data set isn't! Let's try something else.
 
 k_means_1 adds a lot distingushing information 
 
