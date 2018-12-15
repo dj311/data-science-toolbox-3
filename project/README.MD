@@ -32,4 +32,6 @@ Generally, just probe's data increases
 > length(which(connection_events$type==4))
 [1] 54
 > ```
+Look this tomorrow
+https://www.quora.com/In-classification-how-do-you-handle-an-unbalanced-training-set
 
