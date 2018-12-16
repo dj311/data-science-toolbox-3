@@ -18,7 +18,8 @@ library(e1071)
 library(ggplot2)
 library(ranger)
 library(knitr)
-
+library(rpart)
+library(parallel)
 
 set.seed(0xC0FFEE)
 
@@ -57,8 +58,16 @@ setDT(connection_events)  # convert from data.frame to data.table
 
 # K-Fold Validation
 
-```{r}
+```{r eval=FALSE}
 k_folds <- createFolds(connection_events$label, k=10)
+```
+
+```{r include=FALSE, eval=FALSE}
+saveRDS(k_folds, file='./data/k-folds.rds')
+```
+
+```{r include=FALSE, eval=TRUE}
+k_folds <- readRDS(file='./data/k-folds.rds')
 ```
 
 This generates 10 sets of indices on the data. These are arranged such that similar amounts of each label are in each set.
@@ -143,7 +152,8 @@ confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 10 minutes
         data=training_data,
         ## automatically selected since the 'label' column is a factor, but
         ## leave this here for clarity:
-        classification=TRUE
+        classification=TRUE,
+        importance='impurity'  # gini index
     )
 
     predictions <- predict(model, data=testing_data)
@@ -201,9 +211,11 @@ confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 25 minutes
         data=training_data,
         ## automatically selected since the 'label' column is a factor, but
         ## leave this here for clarity:
-        classification=TRUE
+        classification=TRUE,
+        importance='impurity'  # gini index
     )
 
+    variable_importance <- model$variable.importance
     predictions <- predict(model, data=testing_data)
 
     confusion_matrix <- table(testing_data$label, predictions$predictions)
@@ -213,7 +225,7 @@ confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 25 minutes
 ```
 
 ```{r eval=FALSE}
-summary_matrix = Reduce('+', confusion_matrices)
+summary_matrix = Reduce('+', confusion_matrices) # confusion_matrices[[1]] + confusion_matrices[[2]] ... confusion_matrices[[n]]
 summary_matrix
 ```
 
@@ -260,7 +272,7 @@ Instead, to help visualise and identify problems with the classifier, plot $$log
 # Define a function for this to make sure all of our confusion matrices use
 # consistent labelling and axis' for true/predicted classes.
 make_confusion_matrix <- function(true_values, predicted_values) {
-    table(true_values, predicted_values)
+    table(predicted_values, true_values)
 }
 
 # Define a function to plot a confusion matrix with a logarithm axis (well,
@@ -347,17 +359,16 @@ attack_categories <- rbind(
     attack_categories,
     list('normal.', 'normal.')
 )
-```
 
-
-```{r}
 # What is `back`? It isn't defined in the task description
 # or any other documentation I can find.
 attack_categories <- rbind(
     attack_categories,
-    list('back.', 'back.')
+    list('back.', 'dos.')
 )
+```
 
+```{r}
 predicted_categories <- sapply(
     classification_errors$predicted,
     function(name) attack_categories[attack==name]$category
@@ -452,8 +463,8 @@ probe_connection_events$label <- sapply(
     X=probe_connection_events$label,
     FUN=function(label) if (label %in% probe_attacks) label else as.factor('non-probe.')
 )
-
-unique(probe_connection_events$label)
+# remove unused labels
+probe_connection_events$label <- droplevels(probe_connection_events$label)
 ```
 
 
@@ -462,7 +473,7 @@ train <- probe_connection_events[-k_folds[[1]]]
 test <- probe_connection_events[k_folds[[1]]]
 
 probe_model <- naiveBayes(label~., data=train)
-probe_predictions <- predict(nb_model, test)
+probe_predictions <- predict(probe_model, test)
 
 confusion_matrix <- make_confusion_matrix(test$label, probe_predictions)
 plot_confusion_matrix(confusion_matrix)
@@ -479,7 +490,7 @@ get_classification_errors <- function(confusion_matrix) {
 
 
 ```{r eval=FALSE}
-confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 30 minutes
+fold_predictions <-lapply(k_folds, function(fold) {  # approx. 15 minutes
     training_indices <- -fold
     testing_indices <- fold
 
@@ -490,12 +501,17 @@ confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 30 minutes
 
     predictions <- predict(model, testing_data)
 
-    confusion_matrix <- table(testing_data$label, predictions)
-
-    return(confusion_matrix)
+    return(predictions)
 })
 
-summary_matrix = Reduce('+', confusion_matrices)
+testing_labels <- lapply(k_folds, function(fold) probe_connection_events[fold]$label)
+confusion_matrices <- mapply(
+    function(true_labels, predictions) table(true_labels, predictions),
+    testing_labels,
+    fold_predictions,
+    SIMPLIFY=FALSE
+)
+summary_matrix <- Reduce('+', confusion_matrices)
 ```
 
 ```{r include=FALSE, eval=FALSE}
@@ -503,21 +519,430 @@ saveRDS(
     summary_matrix,
     file='./data/daniel-jones-random-forest-naive-bayes-summary-matrix.rds'
 )
+saveRDS(
+    fold_predictions,
+    file='./data/daniel-jones-random-forest-naive-bayes-predictions.rds'
+)
 ```
 
 ```{r include=FALSE, eval=TRUE}
 summary_matrix <- readRDS(
   file='./data/daniel-jones-random-forest-naive-bayes-summary-matrix.rds'
 )
+fold_predictions <- readRDS(
+  file='./data/daniel-jones-random-forest-naive-bayes-predictions.rds'
+)
 ```
 
 
-```{R}
+```{r}
 plot_confusion_matrix(summary_matrix)
 get_classification_errors(summary_matrix)
 ```
 
-Naive bayes assumes dataset is gaussian and indepentent, so this makes us think that the data set isn't! Let's try something else.
+Naive bayes assumes dataset is gaussian and indepentent, so this makes us think that the data set isn't! Let's try something else. In particular, maybe probe is not gaussian.
 
-k_means_1 adds a lot distingushing information 
+Maybe `k_means_1` adds a lot distingushing information.
 
+
+## Learning from these categories
+
+Does it help?
+
+The following function takes in the list of folds, and a correseponding list of predictions from the first model. It will add these predictions as a column to the data frame (using the indexes contained in the fold variable):
+```{r}
+add_predictions <- function(data, folds, predictions, new_column_name) {
+    combined_indices <- Reduce(append, folds)
+    combined_predictions <- Reduce(append, predictions)
+
+    combined_predictions <- as.factor(combined_predictions)
+    levels(combined_predictions) <- levels(predictions[[1]])
+
+    predictions_by_index <- data.table(
+        index=combined_indices,
+        prediction=combined_predictions
+    )
+
+    correctly_ordered_predictions <- predictions_by_index[order(index)]$prediction
+
+    new_data <- copy(data)
+    new_data[[new_column_name]] <- correctly_ordered_predictions
+
+    levels(new_data[[new_column_name]]) <- correctly_ordered_predictions
+
+    return(new_data)
+}
+```
+
+```{r}
+connections_with_probe_predictions <- add_predictions(
+    connection_events,
+    k_folds,
+    fold_predictions,
+    'predicted_probe_type'
+)
+```
+
+
+
+```{r eval=FALSE}
+confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 25 minutes
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connection_events_with_probe_predictions[training_indices]
+    testing_data <- connection_events_with_probe_predictions[testing_indices]
+
+    model <- ranger(
+        label~.,
+        data=training_data,
+        ## automatically selected since the 'label' column is a factor, but
+        ## leave this here for clarity:
+        classification=TRUE
+    )
+
+    predictions <- predict(model, data=testing_data)
+
+    confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+    return(confusion_matrix)
+}
+```
+
+
+## Decision Trees
+
+Plain decision trees struggle with this dataset because the "service" column has 62 levels. Remove them and try again.
+
+```{r}
+connections_without_service <- copy(connection_events)
+connections_without_service$service <- NULL
+
+dt_predictions <- mclapply(k_folds, function(fold) {  # 1
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections_without_service[training_indices]
+    testing_data <- connections_without_service[testing_indices]
+
+    model <- rpart(
+        label~.,
+        data=training_data,
+        parms=list(split='information'),
+        method='class'
+    )
+
+    predictions <- predict(model, testing_data, type='class')
+
+    return(predictions)
+})
+
+testing_labels <- lapply(k_folds, function(fold) connections_without_service[fold]$label)
+confusion_matrices <- mapply(
+    make_confusion_matrix,
+    testing_labels,
+    dt_predictions,
+    SIMPLIFY=FALSE
+)
+summary_matrix <- Reduce('+', confusion_matrices)
+plot_confusion_matrix(summary_matrix)
+```
+
+
+Wow, that is rubbish! Remove smurf:
+
+```{r}
+connections_without_service_and_smurf <- copy(connection_events)
+connections_without_service_and_smurf$service <- NULL
+connections_without_service_and_smurf <- connections_without_service_and_smurf[label!='smurf.']
+
+k_folds <- createFolds(connections_without_service_and_smurf$label, k=10)
+dt_predictions_no_smurf <- mclapply(k_folds, function(fold) {  #
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections_without_service_and_smurf[training_indices]
+    testing_data <- connections_without_service_and_smurf[testing_indices]
+
+    model <- rpart(
+        label~.,
+        data=training_data,
+        parms=list(split='information'),
+        method='class'
+    )
+
+    predictions <- predict(model, testing_data, type='class')
+
+    return(predictions)
+})
+
+testing_labels <- lapply(k_folds, function(fold) connections_without_service_and_smurf[fold]$label)
+confusion_matrices <- mapply(
+    make_confusion_matrix,
+    testing_labels,
+    dt_predictions_no_smurf,
+    SIMPLIFY=FALSE
+)
+summary_matrix <- Reduce('+', confusion_matrices)
+plot_confusion_matrix(summary_matrix)
+```
+
+
+```{r}
+connections <- copy(connection_events)
+connections <- connections[, ..c('label', 'service')]
+
+encoder <- dummyVars(~service, data=connections)
+connections <- data.table(predict(encoder, newdata=connections))
+connections$label <- connection_events$label
+
+k_folds <- readRDS(file='./data/k-folds.rds')
+dt_predictions_service_only <- lapply(k_folds, function(fold) {  #
+    print("start")
+
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    model <- rpart(
+        label~.,  # this data set only contains one-hot-encoded service columns
+        data=training_data,
+        parms=list(split='information'),
+        method='class'
+    )
+
+    predictions <- predict(model, testing_data, type='class')
+    print("finish")
+
+    return(predictions)
+})
+
+testing_labels <- lapply(k_folds, function(fold) connections[fold]$label)
+confusion_matrices <- mapply(
+    make_confusion_matrix,
+    testing_labels,
+    dt_predictions_service_only,
+    SIMPLIFY=FALSE
+)
+summary_matrix <- Reduce('+', confusion_matrices)
+plot_confusion_matrix(summary_matrix)
+```
+
+```{r include=FALSE}
+saveRDS(
+    dt_predictions_service_only,
+    file='./data/daniel-jones-decision-tree-service-only-predictions.rds'
+)
+```
+
+
+Unbalanced classes are causing issues... how about we resample with equal sample sizes?
+
+
+
+## How many of each attack type are there?
+
+```{r}
+connections_by_attack_category <- copy(connections)
+connections_by_attack_category$label <- sapply(
+    connections_by_attack_category$label,
+    function(name) attack_categories[attack==name]$category
+)
+```
+
+
+## Decision Tree with one-hot-encoding
+
+```{r}
+connections <- copy(connection_events)
+
+service_encoder <- dummyVars(~service, data=connections)
+flag_encoder <- dummyVars(~flag, data=connections)
+
+connections <- cbind(
+    connections,
+    as.data.table(predict(service_encoder, newdata=connections)),
+    as.data.table(predict(flag_encoder, newdata=connections))
+)
+
+connections$flag <- NULL
+connections$service <- NULL
+```
+
+```{r eval=FALSE}
+predictions <- mclapply(k_folds, function(fold) {  # approx 15 minutes
+    print("start")
+
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    model <- rpart(
+        label~.,  # this data set only contains one-hot-encoded service columns
+        data=training_data,
+        parms=list(split='information'),
+        method='class',
+        control=list(control=list(minsplit=2))
+    )
+
+    predictions <- predict(model, testing_data, type='class')
+    print("finish")
+
+    return(predictions)
+})
+```
+
+```{r include=FALSE, eval=FALSE}
+saveRDS(
+    predictions,
+    file='./data/daniel-jones-decision-tree-one-hot.rds'
+)
+```
+
+```{r include=FALSE, eval=TRUE}
+predictions <- readRDS(file='./data/daniel-jones-decision-tree-one-hot.rds')
+```
+
+
+```{r}
+testing_labels <- lapply(k_folds, function(fold) connections[fold]$label)
+confusion_matrices <- mapply(
+    make_confusion_matrix,
+    testing_labels,
+    predictions,
+    SIMPLIFY=FALSE
+)
+summary_matrix <- Reduce('+', confusion_matrices)
+plot_confusion_matrix(summary_matrix)
+```
+
+
+## Decision Tree with Naive Bayes for probing attacks
+
+```{r eval=FALSE}
+connections <- copy(connection_events)
+
+service_encoder <- dummyVars(~service, data=connections)
+flag_encoder <- dummyVars(~flag, data=connections)
+
+connections <- cbind(
+    connections,
+    as.data.table(predict(service_encoder, newdata=connections)),
+    as.data.table(predict(flag_encoder, newdata=connections))
+)
+
+connections$flag <- NULL
+connections$service <- NULL
+
+predictions <- lapply(k_folds, function(fold) {  # approx 15 minutes
+    print("start")
+
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    model <- rpart(
+        label~.,  # this data set only contains one-hot-encoded service columns
+        data=training_data,
+        parms=list(split='information'),
+        method='class'
+    )
+
+    predictions <- predict(model, testing_data, type='class')
+    print("finish")
+
+    return(predictions)
+})
+
+testing_labels <- lapply(k_folds, function(fold) connections[fold]$label)
+confusion_matrices <- mapply(
+    make_confusion_matrix,
+    testing_labels,
+    predictions,
+    SIMPLIFY=FALSE
+)
+summary_matrix <- Reduce('+', confusion_matrices)
+plot_confusion_matrix(summary_matrix)
+```
+
+```{r include=FALSE}
+saveRDS(
+    predictions,
+    file='./data/daniel-jones-decision-tree.rds'
+)
+```
+
+
+## Remove DOS attacks from decision trees
+
+```{r}
+connections <- copy(connection_events)
+
+service_encoder <- dummyVars(~service, data=connections)
+flag_encoder <- dummyVars(~flag, data=connections)
+
+connections <- cbind(
+    connections,
+    as.data.table(predict(service_encoder, newdata=connections)),
+    as.data.table(predict(flag_encoder, newdata=connections))
+)
+
+dos_attacks = attack_categories[category=='dos.']$attack
+connections <- connections[!(label %in% dos_attacks)]
+connections$label <- factor(connections$label)
+```
+
+```{r eval=FALSE}
+predictions <- lapply(k_folds, function(fold) {  # approx 15 minutes
+    print("start")
+
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    model <- rpart(
+        label~.,
+        data=training_data,
+        parms=list(split='information'),
+        method='class',
+        control=list(control=list(minsplit=2))
+    )
+
+    predictions <- predict(model, testing_data, type='class')
+    print("finish")
+
+    return(predictions)
+})
+```
+
+```{r include=FALSE, eval=FALSE}
+saveRDS(
+    predictions,
+    file='./data/daniel-jones-decision-tree-one-hot.rds'
+)
+```
+
+```{r include=FALSE, eval=TRUE}
+predictions <- readRDS(file='./data/daniel-jones-decision-tree-one-hot.rds')
+```
+
+
+```{r}
+testing_labels <- lapply(k_folds, function(fold) connections[fold]$label)
+confusion_matrices <- mapply(
+    make_confusion_matrix,
+    testing_labels,
+    predictions,
+    SIMPLIFY=FALSE
+)
+summary_matrix <- Reduce('+', confusion_matrices)
+plot_confusion_matrix(summary_matrix)
+```

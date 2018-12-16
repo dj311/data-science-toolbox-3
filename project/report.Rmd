@@ -12,6 +12,8 @@ documentclass: amsart
 monofont: "Source Code Pro"
 ---
 
+Hewllo
+
 ```{r setup, include=FALSE}
 library(caret)
 library(data.table)
@@ -43,4 +45,11 @@ setDT(connection_events)  # convert from data.frame to data.table
 ```
 
 
-Introduction...
+- Data set and general inference goal: we want to identify particular attacks.
+- What's a random forest?
+- What's a decision tree?
+- Train data on random forest, show visualisation.
+- Visualisation shows how we split on "information gain".
+- Analyse performance of baseline model.
+- Can we 
+
