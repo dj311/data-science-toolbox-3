@@ -79,6 +79,71 @@ Two ways for imbalanced problem:
   r2l         1     29      0    982      2
   u2r         0     17      0      2     30
   
+                    
+                   buffer_overflow. ftp_write. ipsweep. multihop. nmap. normal. portsweep. rootkit. satan. warezclient. warezmaster.
+  buffer_overflow.               29          0        0         0     0       1          0        0      0            0            0
+  ftp_write.                      0          8        0         0     0       0          0        0      0            0            0
+  ipsweep.                        0          0     1247         0     0       0          0        0      0            0            0
+  multihop.                       0          0        0         5     0       1          0        0      0            0            1
+  nmap.                           0          0        5         0   226       0          0        0      0            0            0
+  normal.                         0          0        1         0     0   97271          0        0      0            5            0
+  portsweep.                      0          0        1         0     0       1       1038        0      0            0            0
+  rootkit.                        0          0        0         0     0       2          0        8      0            0            0
+  satan.                          0          0        0         0     0       3          0        0   1586            0            0
+  warezclient.                    0          0        0         0     0       2          0        0      0         1018            0
+  warezmaster.                    0          0        0         0     0       0          0        0      0            0           20
+  
+  
+                    
+                    back. buffer_overflow. ftp_write. guess_passwd.  imap. ipsweep.  land. loadmodule. multihop. neptune.  nmap. normal.  perl.   phf.   pod. portsweep. rootkit.
+  back.              2203                0          0             0      0        0      0           0         0        0      0       0      0      0      0          0        0
+  buffer_overflow.      0               29          0             0      0        0      0           0         0        0      0       1      0      0      0          0        0
+  ftp_write.            0                0          6             0      0        0      0           0         0        0      0       1      0      0      0          0        0
+  guess_passwd.         0                0          0            53      0        0      0           0         0        0      0       0      0      0      0          0        0
+  imap.                 0                0          0             0     12        0      0           0         0        0      0       0      0      0      0          0        0
+  ipsweep.              0                0          0             0      0     1245      0           0         0        0      0       2      0      0      0          0        0
+  land.                 0                0          0             0      0        0     21           0         0        0      0       0      0      0      0          0        0
+  loadmodule.           0                1          0             0      0        0      0           8         0        0      0       0      0      0      0          0        0
+  multihop.             0                0          0             0      0        0      0           0         4        0      0       2      0      0      0          0        0
+  neptune.              0                0          0             0      0        0      0           0         0   107201      0       0      0      0      0          0        0
+  nmap.                 0                0          0             0      0       55      0           0         0        0    174       2      0      0      0          0        0
+  normal.               0                1          0             0      0        0      1           0         0        0      0   97269      0      0      1          0        0
+  perl.                 0                0          0             0      0        0      0           0         0        0      0       0      3      0      0          0        0
+  phf.                  0                0          0             0      0        0      0           0         0        0      0       0      0      4      0          0        0
+  pod.                  0                0          0             0      0        0      0           0         0        0      0       0      0      0    264          0        0
+  portsweep.            0                0          0             0      0        1      0           0         0        0      0       0      0      0      0       1039        0
+  rootkit.              0                0          0             0      0        0      0           0         0        0      0       3      0      0      0          0        7
+  satan.                0                0          0             0      0        0      0           0         0        0      0       1      0      0      0          0        0
+  smurf.                0                0          0             0      0        0      0           0         0        0      0       0      0      0      0          0        0
+  spy.                  0                0          0             0      0        0      0           0         0        0      0       0      0      0      0          0        0
+  teardrop.             0                0          0             0      0        0      0           0         0        0      0       0      0      0      0          0        0
+  warezclient.          0                0          0             0      0        0      0           0         0        0      0       2      0      0      0          0        0
+  warezmaster.          0                0          0             0      0        0      0           0         0        0      0       0      0      0      0          0        0
+                  
+                   satan. smurf.   spy. teardrop. warezclient. warezmaster.
+  back.                 0      0      0         0            0            0
+  buffer_overflow.      0      0      0         0            0            0
+  ftp_write.            0      0      0         0            1            0
+  guess_passwd.         0      0      0         0            0            0
+  imap.                 0      0      0         0            0            0
+  ipsweep.              0      0      0         0            0            0
+  land.                 0      0      0         0            0            0
+  loadmodule.           0      0      0         0            0            0
+  multihop.             0      0      0         0            0            1
+  neptune.              0      0      0         0            0            0
+  nmap.                 0      0      0         0            0            0
+  normal.               0      0      0         0            5            0
+  perl.                 0      0      0         0            0            0
+  phf.                  0      0      0         0            0            0
+  pod.                  0      0      0         0            0            0
+  portsweep.            0      0      0         0            0            0
+  rootkit.              0      0      0         0            0            0
+  satan.             1588      0      0         0            0            0
+  smurf.                0 280790      0         0            0            0
+  spy.                  0      0      2         0            0            0
+  teardrop.             0      0      0       979            0            0
+  warezclient.          0      0      0         0         1018            0
+  warezmaster.          0      0      0         0            0           20
   
 2. from normal to detect the abnormal events
 
