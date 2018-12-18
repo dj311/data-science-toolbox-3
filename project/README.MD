@@ -144,6 +144,8 @@ Two ways for imbalanced problem:
   teardrop.             0      0      0       979            0            0
   warezclient.          0      0      0         0         1018            0
   warezmaster.          0      0      0         0            0           20
-  
+
+no improvement after remove data: buffer_overflow. ipsweep. multihop. nmap. portsweep rootkit satan warezclient. warezmaster. 
+
 2. from normal to detect the abnormal events
 
