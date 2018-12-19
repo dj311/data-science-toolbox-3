@@ -147,5 +147,34 @@ Two ways for imbalanced problem:
 
 no improvement after remove data: buffer_overflow. ipsweep. multihop. nmap. portsweep rootkit satan warezclient. warezmaster. 
 
+After oversampling by using SMOTE
+                   buffer_overflow. ftp_write. ipsweep. multihop.  nmap. normal. portsweep. rootkit. satan.
+  buffer_overflow.              300          0        0         0      0       0          0        0      0
+  ftp_write.                      0         80        0         0      0       0          0        0      0
+  ipsweep.                        0          0    12470         0      0       0          0        0      0
+  multihop.                       0          0        0        70      0       0          0        0      0
+  nmap.                           0          0        9         0   2301       0          0        0      0
+  normal.                        11          0       67         0      0  972633          1        2      2
+  portsweep.                      0          0       10         0      0       0      10390        0      0
+  rootkit.                        0          0        0         0      0       0          0      100      0
+  satan.                          0          0        0         0      0       0          0        0  15890
+  warezclient.                    0          0        0         0      0       0          0        0      0
+  warezmaster.                    0          0        0         0      0       0          0        0      0
+                  
+                   warezclient. warezmaster.
+  buffer_overflow.            0            0
+  ftp_write.                  0            0
+  ipsweep.                    0            0
+  multihop.                   0            0
+  nmap.                       0            0
+  normal.                    54            0
+  portsweep.                  0            0
+  rootkit.                    0            0
+  satan.                      0            0
+  warezclient.            10200            0
+  warezmaster.                0          200
+  
+  
+  ipsweep warezclient buffer_overflow 
 2. from normal to detect the abnormal events
 
