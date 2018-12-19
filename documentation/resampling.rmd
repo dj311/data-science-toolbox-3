@@ -1,0 +1,70 @@
+```{r setup, include=FALSE}
+library(caret)
+library(data.table)
+library(ggplot2)
+library(ranger)
+#ROSE is a package for resampling
+library(ROSE)
+# dplyr: filter
+require(dplyr)
+set.seed(0xC0FFEE)
+```
+##  The normal oversampling
+```{r}
+connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+# final will be the final data after oversampling
+final=data.frame()
+for(i in unique(connection_events$label)){
+  if(i=="normal."){
+    temp <- connection_events
+    temp2 <- temp[which(temp$label=="normal."),]
+    final=rbind(final,temp2)
+  }
+  else{
+    name = paste0("resample_",i)
+    temp <- connection_events %>% 
+      filter(connection_events$label == "normal." | connection_events$label == i)
+    temp <- ovun.sample(label ~ ., data = temp, method="over", N=194554)$data
+    temp2 <- temp[which(temp$label!="normal."),]
+    assign(name,temp) 
+    final=rbind(final,temp2)
+  }
+}
+connection_events=final
+```
+# Oversampling with both real data(the probe attacks from full dataset) and new data with smaller size(created by SMOTE)
+```{r}
+connection_events <- readRDS(file='./data/resampling_events(add_probe).rds')
+connection_events$type=NULL
+# the variable `connection_events1` is used in for{else if{->connection_events1<-}}
+connection_events1=connection_events
+
+connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+final=data.frame()
+for(i in unique(connection_events$label)){
+  if(i=="normal."){
+    temp <- connection_events
+    temp2 <- temp[which(temp$label=="normal."),]
+    final=rbind(final,temp2)
+  }
+  else if(length(which(connection_events1$label== i))>=10000&&length(which(connection_events1$label== i))<=20000){
+    temp <- connection_events1
+    temp2 <- temp[which(temp$label=="normal."),]
+    final=rbind(final,temp)
+  }
+  else{
+    name = paste0("resample_",i)
+    temp <-connection_events %>% 
+      filter(connection_events$label == "normal." | connection_events$label == i)
+    temp <- ovun.sample(label ~ ., data = temp, method="over", N=114554)$data
+    temp2 <- temp[which(temp$label!="normal."),]
+    assign(name,temp)
+    final=rbind(final,temp2)
+  }
+}
+connection_events=final
+```
+# update levels
+```{r}
+connection_events$label<-factor(connection_events$label)
+```
