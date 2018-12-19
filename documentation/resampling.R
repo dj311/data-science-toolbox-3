@@ -3,6 +3,7 @@ library(data.table)
 library(ggplot2)
 library(ranger)
 library(ROSE)
+require(dplyr)
 set.seed(0xC0FFEE)
 
 connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
