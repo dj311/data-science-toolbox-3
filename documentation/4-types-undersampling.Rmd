@@ -1,0 +1,357 @@
+---
+title: "under-sampling-random-4-types"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(caret, data.table, ggplot2, ranger, magrittr, dplyr, BBmisc)
+```
+
+## load the data for a few seconds
+
+
+```{r}
+library(data.table)
+columns <- read.table(
+    "./data/kddcup.names",
+    sep=":",
+    skip=1,  # the first column name are the types, but those are at the end!
+    as.is=T
+)
+column_names <- c(columns[,1], 'label')
+
+connection_events <- read.csv(
+    "./data/kddcup.data_10_percent.gz",
+    col.names=column_names
+)
+
+setDT(connection_events)  # convert from data.frame to data.table
+```
+
+
+```{r}
+
+type <- read.table(
+  "http://kdd.ics.uci.edu/databases/kddcup99/training_attack_types",
+  sep=" ",
+  skip=1,
+  as.is=T
+)
+setDT(type)  # convert from data.frame to data.table
+
+for(i in 1:length(type[[1]])){
+  name = paste0(type[[1]][i],".")
+  connection_events$type[which(connection_events$label == name)]<-type[[2]][i]
+}
+connection_events$type[which(is.na(connection_events$type))]<-"normal"
+unique(connection_events$type)
+connection_events
+```
+
+## select the data from connection_events
+
+Try to use kmeans
+1. learn how to select columns except the label
+
+This code is changing discrete strings into number
+```{r}
+connection_events$protocol_type <- as.integer(factor(connection_events$protocol_type))
+connection_events$service <- as.integer(factor(connection_events$service))
+connection_events$flag <- as.integer(factor(connection_events$flag))
+
+```
+
+## normalize
+
+```{r}
+library(BBmisc)
+kmeansdata <- connection_events[,1:41]
+connection_events[,1:41] <- normalize(kmeansdata, method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
+connection_events$label<-NULL
+
+```
+
+
+
+```{r kmeans, echo=FALSE}
+set.seed(20)
+for(i in unique(connection_events$type)){
+  name = paste0("is_",i)
+  connection_events[[name]] <- ((connection_events$type == i)+0)
+}
+for(i in unique(connection_events$type)){
+  name = paste0("is_",i)
+  columnname = paste0("is_",i)
+  assign(name, connection_events[connection_events[[columnname]]==1])
+}
+```
+
+# Sampling 20 rows with bad results
+
+```{r}
+sam <- data.frame()
+for(i in unique(connection_events$type)){
+  name = paste0("is_",i)
+  name = get(name)
+  if(nrow(name)>=20){
+    index = sample(c(1:nrow(name)),size=20)
+    sam <- rbind(sam, name[index,1:42])
+  }
+  else{
+    index = sample(c(1:nrow(name)),size=nrow(name))
+    sam <- rbind(sam, name[index,1:42])
+  }
+}
+
+# sampling variable for training in random forests
+```
+## Random forests 
+
+```{r}
+library(ranger)
+
+training_data <- sam
+testing_data <- connection_events[,1:42]
+
+
+model <- ranger(
+    type~.,
+    data=training_data,
+    ## automatically selected since the 'label' column is a factor, but
+    ## leave this here for clarity:
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$type, predictions$predictions)
+
+confusion_matrix
+```
+
+
+# Sampling 50 rows with bad results
+
+```{r}
+nsam = 50
+sam <- data.frame()
+for(i in unique(connection_events$type)){
+  name = paste0("is_",i)
+  name = get(name)
+  if(nrow(name)>=nsam){
+    index = sample(c(1:nrow(name)),size=nsam)
+    sam <- rbind(sam, name[index,1:42])
+  }
+  else{
+    index = sample(c(1:nrow(name)),size=nrow(name))
+    sam <- rbind(sam, name[index,1:42])
+  }
+}
+sam
+# sampling variable for training in random forests
+```
+## Random forests 
+
+```{r}
+
+
+training_data <- sam
+testing_data <- connection_events[,1:42]
+
+
+model <- ranger(
+    type~.,
+    data=training_data,
+    ## automatically selected since the 'label' column is a factor, but
+    ## leave this here for clarity:
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$type, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+# Sampling 100 rows
+
+```{r}
+nsam = 100
+sam <- data.frame()
+for(i in unique(connection_events$type)){
+  name = paste0("is_",i)
+  name = get(name)
+  if(nrow(name)>=nsam){
+    index = sample(c(1:nrow(name)),size=nsam)
+    sam <- rbind(sam, name[index,1:42])
+  }
+  else{
+    index = sample(c(1:nrow(name)),size=nrow(name))
+    sam <- rbind(sam, name[index,1:42])
+  }
+}
+sam
+# sampling variable for training in random forests
+```
+## Random forests 
+
+```{r}
+
+training_data <- sam
+testing_data <- connection_events[,1:42]
+
+
+model <- ranger(
+    type~.,
+    data=training_data,
+    ## automatically selected since the 'label' column is a factor, but
+    ## leave this here for clarity:
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$type, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+
+## Try to plot confusion_matrix
+```{r}
+
+# Define a function for this to make sure all of our confusion matrices use
+# consistent labelling and axis' for true/predicted classes.
+make_confusion_matrix <- function(true_values, predicted_values) {
+    table(true_values, predicted_values)
+}
+
+# Define a function to plot a confusion matrix with a logarithm axis (well,
+# log(x+1) to ensure 0 maps to 0). Expects the format output by the
+# make_confusion_matrix function above.
+plot_confusion_matrix <- function(confusion_matrix) {
+    breaks <- c(0, 1, 10, 100, 1000, 10000) * max(confusion_matrix) / 10000
+    labels <- sapply(breaks, function(break_value) sprintf("%.0f", break_value))
+
+    confusion_matrix <- as.data.table(confusion_matrix)
+    colnames(confusion_matrix) <- c('Predicted', 'True', 'Frequency')
+
+    plot <- ggplot(
+            data=confusion_matrix,
+            aes(x=Predicted, y=True, fill=Frequency),
+            limits=c(0, max(confusion_matrix))
+    ) +
+        geom_raster() +
+        theme(axis.text.x=element_text(angle=90, hjust=1)) +
+        scale_fill_gradient(name="Frequency", trans = "log1p", breaks=breaks, labels=labels)
+
+   return(plot)
+}
+library(ggplot2)
+# Example:
+plot_confusion_matrix(confusion_matrix)
+```
+
+The graph shows that for normal part the preformance is terrible! Predict too many attacks to normal! Try to use kmeans to improve it.
+
+## K-means: for every attacks types
+
+```{r}
+connection_events <- readRDS(file='../data/original-data.rds')
+
+set.seed(20)
+#random choose 10000 data for training
+nsam =100000
+nclass = 20
+connection_events[,1:41] <- normalize(connection_events[,1:41], method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
+index = sample(c(1:nrow(connection_events)),size=nsam)
+sample_events <- connection_events[index,1:42]
+#normalize sample_events
+
+#zscore1 <- function(newdataf, dataf){
+#  normalizeddataf <- newdataf 
+#  for (n in names(newdataf)){
+#     normalizeddataf[[n]] <-  
+#         (newdataf[[n]] - mean(dataf[[n]])) /  sd(dataf[[n]])
+#     } 
+#  return(normalizeddataf)
+#}
+
+#sample_events[,1:41] <- zscore1(sample_events[,1:41],sample_events[,1:41])
+#sample_events<- replace(sample_events, is.na(sample_events), 0)
+
+ktable <- data.frame()
+for(i in unique(connection_events$label)){
+  kmeansdata <- sample_events[which(sample_events[,42]==i),1:41]
+  s <- sample_events[which(sample_events[,42]==i),1:42]
+  if(nrow(kmeansdata)>nclass){
+    #Kmeans
+    Cluster <- kmeans(kmeansdata, nclass, nstart = 20)
+    centers <- Cluster$centers
+    centers <- cbind(centers, label=rep(i, nclass))
+    ktable <- rbind(ktable, centers)
+  }
+  else{
+    #Kmeans
+    ktable <- rbind(ktable, s)
+  }
+  
+}
+ktable
+
+```
+
+Try again without normalization
+```{r}
+set.seed(20)
+nclass = 30
+ktable <- data.frame()
+
+#random choose 10000 data for training
+for(i in unique(connection_events$type)){
+  #choose different type of events
+  index <- which(connection_events$type==i)
+  assign(i,connection_events[index,1:41])
+  #do kmeans cluster (if the size of data smaller than the number of kmeans centers, do nothing)
+  if(nrow(get(i))>100){
+    clusters <- kmeans(get(i), nclass, nstart = 20)
+    clusters <- cbind(clusters$centers,type=rep(i, nclass))
+  }
+  else{
+    clusters <- get(i)
+    clusters <- cbind(clusters,type=rep(i, nrow(get(i))))
+  }
+  ktable <- rbind(ktable, clusters)
+}
+```
+
+
+```{r}
+training_data <- ktable
+testing_data <- connection_events[,1:42]
+#testing_data <- cbind(test,connection_events[,42])
+
+model <- ranger(
+    type~.,
+    data=training_data,
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$type, predictions$predictions)
+
+confusion_matrix <- as.table(confusion_matrix)
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+
+It shows that for 4 types attacks prediction, undersampling is better.
