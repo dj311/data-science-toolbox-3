@@ -1262,7 +1262,7 @@ get_clusters <- function(data) {
 
 
 ```{r}
-# This takes like an hour on my laptop, and requires approx 6GB
+# This takes > an hour on my laptop, and requires approx 6GB
 # of RAM. Theres a memory leak in here somewhere but I haven't
 # found it - hence the scattering of gc() and rm() calls.
 
@@ -1357,10 +1357,47 @@ k_means_decision_tree_model <- readRDS(
     file='./data/daniel-jones-k-means-5-decision-tree-model.rds'
 )
 
-plot(model)
-text(model)
+plot(k_means_decision_tree_model)
+text(k_means_decision_tree_model)
 
-sort(model$variable.importance)
+sort(k_means_decision_tree_model$variable.importance)
 ```
 
-In short, the k-means clusters aren't considered important by the decision tree, and so don't make the cut!
+Here you can see that k-means cluster is cons
+
+
+## K-NN for normal and non-normal added to decision trees
+```{r}
+connections <- copy(connection_events)
+
+knn_transform <- function(data) {
+    data <- copy(data)
+
+    data$label <- sapply(
+        data$label,
+        function(label) if (label == 'normal.') 'normal.' else 'non-normal.'
+    )
+
+    return(data)
+}
+
+fold_predictions <- lapply(k_folds, function(fold) { 
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    knn_model <- train(
+        label~.,
+        data=knn_transform(training_data),
+        method="knn",
+        preProcess=c("center","scale"),
+    )
+
+    predictions <- predict(knn_model, newdata=knn_transform(testing_data))
+
+    return(predictions)
+}
+
+```
