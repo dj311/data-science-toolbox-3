@@ -200,12 +200,288 @@ attack_categories <- rbind(
 ```
 
 # Weighted Decision Tree
+```{r eval=FALSE}
+decision_tree_transform <- function(data) {
+    connections <- copy(data)
+
+    # For decision trees, it is useful to one-hot-encode categorical
+    # variables with many potential values. This gives a big speed increase.
+    # I'm not sure why though, the complexity is the same? Probably
+    # does some nice optimisations for binary variables?
+
+    service_encoder <- dummyVars(~service, data=connections)
+    flag_encoder <- dummyVars(~flag, data=connections)
+
+    connections <- cbind(
+        connections,
+        as.data.table(predict(service_encoder, newdata=connections)),
+        as.data.table(predict(flag_encoder, newdata=connections))
+    )
+
+    connections$flag <- NULL
+    connections$service <- NULL
+
+    return(connections)
+}
+
+connections <- decision_tree_transform(connection_events)
+
+# This is slow, but clearer than the other ways I could think of:
+number_of_label_occurrences <- sapply(
+    levels(connections$label),
+    function(event_label) nrow(connections[label==event_label])/nrow(connection_events)
+)
+
+fold_predictions <- lapply(k_folds, function(fold) {  # approx 15 minutes
+    print("start")
+    gc()
+
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    training_weights <- sapply(training_data$label, function(connection_label) {
+        number_of_occurences <- number_of_label_occurrences[[connection_label]]
+        weight <- 1/number_of_occurences
+        return(weight)
+    })
+
+    model <- rpart(
+        label~.,
+        data=training_data,
+        parms=list(split='information'),
+        method='class',
+        control=list(control=list(minsplit=2)),
+        weights=training_weights
+    )
+
+    predictions <- predict(model, testing_data, type='class')
+
+    return(predictions)
+})
+
+weighted_decision_tree_results <- ModelResults(
+    data_transformation_function=decision_tree_transform,
+    k_folds=k_folds,
+    fold_predictions=fold_predictions
+)
+
+# Save a model for analysis, training it on the whole data set:
+weights <- sapply(connections$label, function(connection_label) {
+    number_of_occurences <- number_of_label_occurrences[[connection_label]]
+    weight <- 1/number_of_occurences
+    return(weight)
+})
+
+weighted_decision_tree_model <- rpart(
+    label~.,
+    data=connections,
+    parms=list(split='information'),
+    method='class',
+    control=list(control=list(minsplit=2)),
+    weights=weights
+)
+```
+
+```{r eval=FALSE, include=FALSE}
+saveRDS(
+    weighted_decision_tree_results,
+    file='./data/daniel-jones-weighted-decision-tree-results.rds'
+)
+saveRDS(
+    weighted_decision_tree_model,
+    file='./data/daniel-jones-weighted-decision-tree-model.rds'
+)
+```
+
+
+```{r eval=TRUE, include=FALSE}
+weighted_decision_tree_results <- readRDS(
+    file='./data/daniel-jones-weighted-decision-tree-results.rds'
+)
+weighted_decision_tree_model <- readRDS(
+    file='./data/daniel-jones-weighted-decision-tree-model.rds'
+)
+```
+
+```{r}
+weighted_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
+classification_errors <- get_classification_errors(weighted_decision_tree_results$confusion_matrix(connection_events))
+
+predicted_categories <- sapply(
+    classification_errors$predicted,
+    function(name) attack_categories[attack==name]$category
+)
+true_categories <- sapply(
+    classification_errors$true,
+    function(name) attack_categories[attack==name]$category
+)
+
+classification_errors$predicted_category <- predicted_categories
+classification_errors$true_category <- true_categories
+
+classification_errors
+```
+
+
 
 
 # Weighted Decision Tree with 5 k-means clusters
 
+From results above it is clear that the vast majority of errors are from false predictions of normal trafffic for truly malicious traffic. This seems to be well distributed across all attack types.
+
+This code uses Junfan's k-means clustering to add a new feature which is then fed into the decision tree.
+
+```{r}
+transform_data_for_k_means <- function(data) {
+    data <- copy(data)
+
+    # This code changes strings into number and normalizes the whole data for kmeans classification.
+    data$protocol_type <- as.integer(factor(data$protocol_type))
+    data$label <- NULL
+
+    data <- normalize(
+        data,
+        method="standardize",
+        range=c(0, 1),
+        margin=1L,
+        on.constant="quiet"
+    )
+
+    return(data)
+}
+
+get_clusters <- function(data) {
+    kmeansdata <- transform_data_for_k_means(data)
+
+    # K-means: 5 catogries (Trying to devided the attacks type into
+    # 4 automatically)
+    Cluster <- kmeans(kmeansdata, 5, nstart = 20)
+
+    rm(kmeansdata)
+    gc()
+
+    # Add new feature
+    k_means_cluster <- as.integer(Cluster$`cluster`)
+
+    return(k_means_cluster)
+}
+```
+
+
+```{r eval=FALSE, include=TRUE}
+# This takes > an hour on my laptop, and requires approx 6GB
+# of RAM. Theres a memory leak in here somewhere but I haven't
+# found it - hence the scattering of gc() and rm() calls.
+
+# Output has been saved below so you don't have to run it.
+
+connections <- decision_tree_transform(connection_events)
+
+fold_predictions <- lapply(k_folds, function(fold) { 
+    print("start")
+    gc()
+
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    training_weights <- sapply(training_data$label, function(connection_label) {
+        number_of_occurences <- number_of_label_occurrences[[connection_label]]
+        weight <- 1/number_of_occurences
+        return(weight)
+    })
+
+    training_data$k_means_cluster <- get_clusters(training_data)
+    gc()
+
+    model <- rpart(
+        label~.,
+        data=training_data,
+        parms=list(split='information'),
+        method='class',
+        control=list(control=list(minsplit=2)),
+        weights=training_weights
+    )
+
+    testing_data$k_means_cluster <- get_clusters(testing_data)
+    predictions <- predict(model, testing_data, type='class')
+
+    rm(training_data)
+    rm(testing_data)
+
+    return(predictions)
+})
+
+k_means_decision_tree_results <- ModelResults(
+    data_transformation_function=decision_tree_transform,
+    k_folds=k_folds,
+    fold_predictions=fold_predictions
+)
+
+# Save a model for analysis, training it on the whole data set:
+weights <- sapply(connections$label, function(connection_label) {
+    number_of_occurences <- number_of_label_occurrences[[connection_label]]
+    weight <- 1/number_of_occurences
+    return(weight)
+})
+
+connections$k_means_cluster <- get_clusters(connections)
+k_means_decision_tree_model <- rpart(
+    label~.,
+    data=connections,
+    parms=list(split='information'),
+    method='class',
+    control=list(control=list(minsplit=2)),
+    weights=weights
+)
+```
+
+```{r eval=FALSE, include=FALSE}
+saveRDS(
+    k_means_decision_tree_results,
+    file='./data/daniel-jones-k-means-5-decision-tree-results.rds'
+)
+saveRDS(
+    k_means_decision_tree_model,
+    file='./data/daniel-jones-k-means-5-decision-tree-model.rds'
+)
+```
+
+```{r eval=TRUE, include=FALSE}
+k_means_decision_tree_results <- readRDS(
+    file='./data/daniel-jones-k-means-5-decision-tree-results.rds'
+)
+k_means_decision_tree_model <- readRDS(
+    file='./data/daniel-jones-k-means-5-decision-tree-model.rds'
+)
+
+```
+
+```{r}
+k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
+k_means_decision_tree_confusion_matrix <- k_means_decision_tree_results$confusion_matrix(connection_events)
+get_classification_errors(k_means_decision_tree_confusion_matrix)[frequency >= 10]
+```
+
+```{r}
+plot(k_means_decision_tree_model)
+text(k_means_decision_tree_model)
+
+sort(k_means_decision_tree_model$variable.importance)
+```
+
+Here you can see that k-means cluster is able to add information towards rare classes which is then used by the decision tree!
+
 
 # Weighted Decision Tree with normal/non-normal k-NN classes
+
+TODO(DAN): model is still running, will copy over when done
+
 
 
 # Random Forest on all features
