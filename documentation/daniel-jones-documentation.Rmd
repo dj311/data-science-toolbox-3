@@ -20,6 +20,9 @@ library(ranger)
 library(knitr)
 library(rpart)
 library(parallel)
+library(magrittr)
+library(dplyr)
+library(BBmisc)
 
 set.seed(0xC0FFEE)
 
@@ -278,7 +281,7 @@ make_confusion_matrix <- function(true_values, predicted_values) {
 # Define a function to plot a confusion matrix with a logarithm axis (well,
 # log(x+1) to ensure 0 maps to 0). Expects the format output by the
 # make_confusion_matrix function above.
-plot_confusion_matrix <- function(confusion_matrix) {
+plot_log_confusion_matrix <- function(confusion_matrix) {
     breaks <- c(0, 1, 10, 100, 1000, 10000) * max(confusion_matrix) / 10000
     labels <- sapply(breaks, function(break_value) sprintf("%.0f", break_value))
 
@@ -293,6 +296,24 @@ plot_confusion_matrix <- function(confusion_matrix) {
         geom_raster() +
         theme(axis.text.x=element_text(angle=90, hjust=1)) +
         scale_fill_gradient(name="Frequency", trans = "log1p", breaks=breaks, labels=labels)
+
+   return(plot)
+}
+
+# Define a function to plot a confusion matrix. Expects the format output by the
+# make_confusion_matrix function above.
+plot_confusion_matrix <- function(confusion_matrix) {
+    confusion_matrix <- as.data.table(confusion_matrix)
+    colnames(confusion_matrix) <- c('Predicted', 'True', 'Frequency')
+
+    plot <- ggplot(
+            data=confusion_matrix,
+            aes(x=Predicted, y=True, fill=Frequency),
+            limits=c(0, max(confusion_matrix))
+    ) +
+        geom_raster() +
+        theme(axis.text.x=element_text(angle=90, hjust=1)) +
+        scale_fill_gradient(name="Frequency")
 
    return(plot)
 }
@@ -334,16 +355,44 @@ ModelResults <- function(data_transformation_function, k_folds, fold_predictions
         return(summary_matrix)
     }
 
-    self$plot_confusion_matrix <- function(data) {
-        plot_confusion_matrix(self$confusion_matrix(data))
+    self$plot_confusion_matrix <- function(data, log=FALSE) {
+        confusion_matrix <- self$confusion_matrix(data)
+
+        if (log==TRUE) {
+            plot_log_confusion_matrix(confusion_matrix)
+        } else {
+            plot_confusion_matrix(confusion_matrix)
+        }
     }
 
     return(self)
 }
+
+plot_frequency_table <- function(freq_table) {
+    colnames(freq_table) <- c('Predicted', 'True', 'Frequency')
+
+    # TODO: fill in gaps
+    all_classes <- union(freq_table$Predicted, freq_table$True)
+
+    plot <- ggplot(data=freq_table) +
+        lims(fill=c(0, max(freq_table$Frequency))) +
+        aes(x=Predicted, y=True, fill=Frequency) +
+        geom_raster() +
+        theme(axis.text.x=element_text(angle=90, hjust=1))
+
+    return(plot)
+}
+
+get_classification_errors <- function(confusion_matrix) {
+    confusion_table <- as.data.table(confusion_matrix)
+    colnames(confusion_table) <- c('predicted', 'true', 'frequency')
+    confusion_table[predicted!=true & frequency > 0][order(-frequency)]
+}
 ```
 
+
 ```{r}
-plot_confusion_matrix(summary_matrix)
+plot_log_confusion_matrix(summary_matrix)
 ```
 
 
@@ -354,7 +403,7 @@ summary_matrix_without_smurf <- summary_matrix[
     rownames(summary_matrix) != 'smurf.',
     colnames(summary_matrix) != 'smurf.'
 ]
-plot_confusion_matrix(summary_matrix_without_smurf)
+plot_log_confusion_matrix(summary_matrix_without_smurf)
 ```
 
 What are greatest source of error in this model?
@@ -437,21 +486,6 @@ errors_by_category
 ```
 
 ```{r}
-plot_frequency_table <- function(freq_table) {
-    colnames(freq_table) <- c('Predicted', 'True', 'Frequency')
-
-    # TODO: fill in gaps
-    all_classes <- union(freq_table$Predicted, freq_table$True)
-
-    plot <- ggplot(data=freq_table) +
-        lims(fill=c(0, max(freq_table$Frequency))) +
-        aes(x=Predicted, y=True, fill=Frequency) +
-        geom_raster() +
-        theme(axis.text.x=element_text(angle=90, hjust=1))
-
-    return(plot)
-}
-
 plot_frequency_table(errors_by_category)
 ```
 
@@ -521,16 +555,7 @@ probe_model <- naiveBayes(label~., data=train)
 probe_predictions <- predict(probe_model, test)
 
 confusion_matrix <- make_confusion_matrix(test$label, probe_predictions)
-plot_confusion_matrix(confusion_matrix)
-```
-
-
-```{r}
-get_classification_errors <- function(confusion_matrix) {
-    confusion_table <- as.data.table(confusion_matrix)
-    colnames(confusion_table) <- c('predicted', 'true', 'frequency')
-    confusion_table[predicted!=true & frequency > 0][order(-frequency)]
-}
+plot_log_confusion_matrix(confusion_matrix)
 ```
 
 
@@ -581,7 +606,7 @@ fold_predictions <- readRDS(
 
 
 ```{r}
-plot_confusion_matrix(summary_matrix)
+plot_log_confusion_matrix(summary_matrix)
 get_classification_errors(summary_matrix)
 ```
 
@@ -690,7 +715,7 @@ confusion_matrices <- mapply(
     SIMPLIFY=FALSE
 )
 summary_matrix <- Reduce('+', confusion_matrices)
-plot_confusion_matrix(summary_matrix)
+plot_log_confusion_matrix(summary_matrix)
 ```
 
 
@@ -729,7 +754,7 @@ confusion_matrices <- mapply(
     SIMPLIFY=FALSE
 )
 summary_matrix <- Reduce('+', confusion_matrices)
-plot_confusion_matrix(summary_matrix)
+plot_log_confusion_matrix(summary_matrix)
 ```
 
 
@@ -772,7 +797,7 @@ confusion_matrices <- mapply(
     SIMPLIFY=FALSE
 )
 summary_matrix <- Reduce('+', confusion_matrices)
-plot_confusion_matrix(summary_matrix)
+plot_log_confusion_matrix(summary_matrix)
 ```
 
 ```{r include=FALSE}
@@ -862,11 +887,13 @@ confusion_matrices <- mapply(
     SIMPLIFY=FALSE
 )
 summary_matrix <- Reduce('+', confusion_matrices)
-plot_confusion_matrix(summary_matrix)
+plot_log_confusion_matrix(summary_matrix)
 ```
 
 
 ## Decision Tree with Naive Bayes for probing attacks
+
+Wrongly labelled experiment?
 
 ```{r eval=FALSE}
 connections <- copy(connection_events)
@@ -913,7 +940,7 @@ confusion_matrices <- mapply(
     SIMPLIFY=FALSE
 )
 summary_matrix <- Reduce('+', confusion_matrices)
-plot_confusion_matrix(summary_matrix)
+plot_log_confusion_matrix(summary_matrix)
 ```
 
 ```{r include=FALSE}
@@ -989,7 +1016,7 @@ confusion_matrices <- mapply(
     SIMPLIFY=FALSE
 )
 summary_matrix <- Reduce('+', confusion_matrices)
-plot_confusion_matrix(summary_matrix)
+plot_log_confusion_matrix(summary_matrix)
 ```
 
 
@@ -1131,7 +1158,6 @@ weighted_decision_tree_results <- ModelResults(
     k_folds=k_folds,
     fold_predictions=fold_predictions
 )
-weighted_decision_tree_results$plot_confusion_matrix(connection_events)
 
 # Save a model for analysis, training it on the whole data set:
 weights <- sapply(connections$label, function(connection_label) {
@@ -1168,5 +1194,147 @@ weighted_decision_tree_results <- readRDS(
 )
 weighted_decision_tree_model <- readRDS(
     file='./data/daniel-jones-weighted-decision-tree-model.rds'
+)
+```
+
+```{r}
+weighted_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
+classification_errors <- get_classification_errors(weighted_decision_tree_results$confusion_matrix(connection_events))
+
+predicted_categories <- sapply(
+    classification_errors$predicted,
+    function(name) attack_categories[attack==name]$category
+)
+true_categories <- sapply(
+    classification_errors$true,
+    function(name) attack_categories[attack==name]$category
+)
+
+classification_errors$predicted_category <- predicted_categories
+classification_errors$true_category <- true_categories
+
+classification_errors
+```
+
+
+
+## Weighted Decision Tree with k-means and 5 attack types
+
+From results above it is clear that the vast majority of errors are from false predictions of normal trafffic for truly malicious traffic. This seems to be well distributed across all attack types.
+
+This code uses Junfan's k-means clustering to add a new feature which is then fed into the decision tree.
+
+```{r}
+transform_data_for_k_means <- function(data) {
+    data <- copy(data)
+
+    # This code changes strings into number and normalizes the whole data for kmeans classification.
+    data$protocol_type <- as.integer(factor(data$protocol_type))
+    data$label <- NULL
+
+    data <- normalize(
+        data,
+        method="standardize",
+        range=c(0, 1),
+        margin=1L,
+        on.constant="quiet"
+    )
+
+    return(data)
+}
+
+get_clusters <- function(data) {
+    kmeansdata <- transform_data_for_k_means(data)
+
+    # K-means: 5 catogries (Trying to devided the attacks type into
+    # 4 automatically)
+    Cluster <- kmeans(kmeansdata, 5, nstart = 20)
+
+    rm(kmeansdata)
+    gc()
+
+    # Add new feature
+    k_means_cluster <- as.integer(Cluster$`cluster`)
+
+    return(k_means_cluster)
+}
+```
+
+
+```{r}
+# This takes like an hour on my laptop, and requires approx 6GB
+# of RAM. Theres a memory leak in here somewhere but I haven't
+# found it - hence the scattering of gc() and rm() calls.
+
+# Output has been saved below so you don't have to run it.
+
+connections <- decision_tree_transform(connection_events)
+
+fold_predictions <- lapply(k_folds, function(fold) { 
+    print("start")
+    gc()
+
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    training_weights <- sapply(training_data$label, function(connection_label) {
+        number_of_occurences <- number_of_label_occurrences[[connection_label]]
+        weight <- 1/number_of_occurences
+        return(weight)
+    })
+
+    training_data$k_means_cluster <- get_clusters(training_data)
+    gc()
+
+    model <- rpart(
+        label~.,
+        data=training_data,
+        parms=list(split='information'),
+        method='class',
+        control=list(control=list(minsplit=2)),
+        weights=training_weights
+    )
+
+    testing_data$k_means_cluster <- get_clusters(testing_data)
+    predictions <- predict(model, testing_data, type='class')
+
+    rm(training_data)
+    rm(testing_data)
+
+    return(predictions)
+})
+
+k_means_decision_tree_results <- ModelResults(
+    data_transformation_function=decision_tree_transform,
+    k_folds=k_folds,
+    fold_predictions=fold_predictions
+)
+
+# Save a model for analysis, training it on the whole data set:
+weights <- sapply(connections$label, function(connection_label) {
+    number_of_occurences <- number_of_label_occurrences[[connection_label]]
+    weight <- 1/number_of_occurences
+    return(weight)
+})
+k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
+
+connections$k_means_cluster <- get_clusters(training_data)
+k_means_decision_tree_model <- rpart(
+    label~.,
+    data=connections,
+    parms=list(split='information'),
+    method='class',
+    control=list(control=list(minsplit=2)),
+    weights=weights
+)
+```
+
+```{r}
+saveRDS(
+    k_means_decision_tree_results,
+    file='./data/daniel-jones-k-means-5-decision-tree-results.rds'
 )
 ```
