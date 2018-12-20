@@ -297,7 +297,52 @@ plot_confusion_matrix <- function(confusion_matrix) {
    return(plot)
 }
 
-# Example:
+
+ModelResults <- function(data_transformation_function, k_folds, fold_predictions) {
+    ## Class to save the results from a model test. Takes:
+    ##   data: the data set used (might include extra features,
+    ##      modified encodings etc).
+    ##   k_folds: a list of "folds", each of which is a list of
+    ##     indices pointing to the rows in the data set which
+    ##     should be left out.
+    ##   predictions: the results of running the model against
+    ##      the testing set of each fold.
+
+    self <- list()
+
+    self$transform_function <- data_transformation_function
+    self$folds <- k_folds
+    self$predictions <- fold_predictions
+
+    self$transformed_data <- function(data) {
+        return(self$transform_function(data))
+    }
+
+    self$confusion_matrix <- function(data) {
+        transformed_data <- self$transformed_data(data)
+        testing_labels <- lapply(self$folds, function(fold) transformed_data[fold]$label)
+
+        confusion_matrices <- mapply(
+            make_confusion_matrix,
+            testing_labels,
+            self$predictions,
+            SIMPLIFY=FALSE
+        )
+
+        summary_matrix <- Reduce('+', confusion_matrices)
+
+        return(summary_matrix)
+    }
+
+    self$plot_confusion_matrix <- function(data) {
+        plot_confusion_matrix(self$confusion_matrix(data))
+    }
+
+    return(self)
+}
+```
+
+```{r}
 plot_confusion_matrix(summary_matrix)
 ```
 
@@ -945,4 +990,183 @@ confusion_matrices <- mapply(
 )
 summary_matrix <- Reduce('+', confusion_matrices)
 plot_confusion_matrix(summary_matrix)
+```
+
+
+```{r}
+variable_importance_with_smurf <- list(
+                   duration= 210.970575,
+                    service= 19307.351323,
+                  src_bytes= 23148.975763,
+                       land= 6.086779,
+                     urgent= 2.087275,
+          num_failed_logins= 17.703656,
+            num_compromised= 957.737512,
+               su_attempted= 0.565664,
+         num_file_creations= 6.248573,
+           num_access_files= 2.542122,
+              is_host_login= 0.000000,
+                      count= 36321.943733,
+                serror_rate= 5078.072186,
+                rerror_rate= 732.746073,
+              same_srv_rate= 16962.574372,
+         srv_diff_host_rate= 649.102051,
+         dst_host_srv_count= 10216.167115,
+     dst_host_diff_srv_rate= 6843.261708,
+dst_host_srv_diff_host_rate= 2191.048162,
+   dst_host_srv_serror_rate= 1763.620285,
+   dst_host_srv_rerror_rate= 850.369368,
+                protocol_type= 23862.018337,
+                         flag= 12183.480496,
+                    dst_bytes= 7430.310362,
+               wrong_fragment= 834.171477,
+                          hot= 915.274219,
+                    logged_in= 2189.125733,
+                   root_shell= 8.838275,
+                     num_root= 8.611368,
+                   num_shells= 2.482762,
+            num_outbound_cmds= 0.000000,
+               is_guest_login= 76.093762,
+                    srv_count= 36370.775366,
+              srv_serror_rate= 2438.832273,
+              srv_rerror_rate= 457.859960,
+                diff_srv_rate= 12685.997367,
+               dst_host_count= 2764.940749,
+       dst_host_same_srv_rate= 8615.920050,
+  dst_host_same_src_port_rate= 21461.868784,
+         dst_host_serror_rate= 3688.543714,
+         dst_host_rerror_rate= 1075.669444)
+```
+
+## Calculating Variable Importance
+
+```{r}
+variable_importance_with_smurf <- data.table(
+    name=names(variable_importance_with_smurf),
+    importance=variable_importance_with_smurf
+)
+variable_importance_without_smurf <- data.table(
+    name=names(model$variable.importance),
+    importance=model$variable.importance
+)
+model <- ranger(
+    label~.,
+    data=training_data,
+        ## automatically selected since the 'label' column is a factor, but
+        ## leave this here for clarity:
+        classification=TRUE,
+        importance='impurity'  # gini index
+    )
+```
+
+
+
+## Decision Trees with Class Weightings
+
+```{r eval=FALSE}
+
+decision_tree_transform <- function(data) {
+    connections <- copy(data)
+
+    # For decision trees, it is useful to one-hot-encode categorical
+    # variables with many potential values. This gives a big speed increase.
+    # I'm not sure why though, the complexity is the same? Probably
+    # does some nice optimisations for binary variables?
+
+    service_encoder <- dummyVars(~service, data=connections)
+    flag_encoder <- dummyVars(~flag, data=connections)
+
+    connections <- cbind(
+        connections,
+        as.data.table(predict(service_encoder, newdata=connections)),
+        as.data.table(predict(flag_encoder, newdata=connections))
+    )
+
+    connections$flag <- NULL
+    connections$service <- NULL
+
+    return(connections)
+}
+
+connections <- decision_tree_transform(connection_events)
+
+# This is slow, but clearer than the other ways I could think of:
+number_of_label_occurrences <- sapply(
+    levels(connections$label),
+    function(event_label) nrow(connections[label==event_label])/nrow(connection_events)
+)
+
+fold_predictions <- lapply(k_folds, function(fold) {  # approx 15 minutes
+    print("start")
+    gc()
+
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    training_weights <- sapply(training_data$label, function(connection_label) {
+        number_of_occurences <- number_of_label_occurrences[[connection_label]]
+        weight <- 1/number_of_occurences
+        return(weight)
+    })
+
+    model <- rpart(
+        label~.,
+        data=training_data,
+        parms=list(split='information'),
+        method='class',
+        control=list(control=list(minsplit=2)),
+        weights=training_weights
+    )
+
+    predictions <- predict(model, testing_data, type='class')
+
+    return(predictions)
+})
+
+weighted_decision_tree_results <- ModelResults(
+    data_transformation_function=decision_tree_transform,
+    k_folds=k_folds,
+    fold_predictions=fold_predictions
+)
+weighted_decision_tree_results$plot_confusion_matrix(connection_events)
+
+# Save a model for analysis, training it on the whole data set:
+weights <- sapply(connections$label, function(connection_label) {
+    number_of_occurences <- number_of_label_occurrences[[connection_label]]
+    weight <- 1/number_of_occurences
+    return(weight)
+})
+
+weighted_decision_tree_model <- rpart(
+    label~.,
+    data=connections,
+    parms=list(split='information'),
+    method='class',
+    control=list(control=list(minsplit=2)),
+    weights=weights
+)
+```
+
+```{r eval=TRUE, include=FALSE}
+saveRDS(
+    weighted_decision_tree_results,
+    file='./data/daniel-jones-weighted-decision-tree-results.rds'
+)
+saveRDS(
+    weighted_decision_tree_model,
+    file='./data/daniel-jones-weighted-decision-tree-model.rds'
+)
+```
+
+
+```{r eval=TRUE, include=FALSE}
+weighted_decision_tree_results <- readRDS(
+    file='./data/daniel-jones-weighted-decision-tree-results.rds'
+)
+weighted_decision_tree_model <- readRDS(
+    file='./data/daniel-jones-weighted-decision-tree-model.rds'
+)
 ```
