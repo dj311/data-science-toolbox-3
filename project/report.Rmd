@@ -12,14 +12,19 @@ documentclass: amsart
 monofont: "Source Code Pro"
 ---
 
-Hewllo
 
 ```{r setup, include=FALSE}
 library(caret)
 library(data.table)
+library(e1071)
 library(ggplot2)
 library(ranger)
 library(knitr)
+library(rpart)
+library(parallel)
+library(magrittr)
+library(dplyr)
+library(BBmisc)
 
 set.seed(0xC0FFEE)
 
@@ -43,6 +48,220 @@ connection_events <- read.csv(
 
 setDT(connection_events)  # convert from data.frame to data.table
 ```
+
+Utility Functions:
+```{r}
+# Define a function for this to make sure all of our confusion matrices use
+# consistent labelling and axis' for true/predicted classes.
+make_confusion_matrix <- function(true_values, predicted_values) {
+    table(predicted_values, true_values)
+}
+
+# Define a function to plot a confusion matrix with a logarithm axis (well,
+# log(x+1) to ensure 0 maps to 0). Expects the format output by the
+# make_confusion_matrix function above.
+plot_log_confusion_matrix <- function(confusion_matrix) {
+    breaks <- c(0, 1, 10, 100, 1000, 10000) * max(confusion_matrix) / 10000
+    labels <- sapply(breaks, function(break_value) sprintf("%.0f", break_value))
+
+    confusion_matrix <- as.data.table(confusion_matrix)
+    colnames(confusion_matrix) <- c('Predicted', 'True', 'Frequency')
+
+    plot <- ggplot(
+            data=confusion_matrix,
+            aes(x=Predicted, y=True, fill=Frequency),
+            limits=c(0, max(confusion_matrix))
+    ) +
+        geom_raster() +
+        theme(axis.text.x=element_text(angle=90, hjust=1)) +
+        scale_fill_gradient(name="Frequency", trans = "log1p", breaks=breaks, labels=labels)
+
+   return(plot)
+}
+
+# Define a function to plot a confusion matrix. Expects the format output by the
+# make_confusion_matrix function above.
+plot_confusion_matrix <- function(confusion_matrix) {
+    confusion_matrix <- as.data.table(confusion_matrix)
+    colnames(confusion_matrix) <- c('Predicted', 'True', 'Frequency')
+
+    plot <- ggplot(
+            data=confusion_matrix,
+            aes(x=Predicted, y=True, fill=Frequency),
+            limits=c(0, max(confusion_matrix))
+    ) +
+        geom_raster() +
+        theme(axis.text.x=element_text(angle=90, hjust=1)) +
+        scale_fill_gradient(name="Frequency")
+
+   return(plot)
+}
+
+
+ModelResults <- function(data_transformation_function, k_folds, fold_predictions) {
+    ## Class to save the results from a model test. Takes:
+    ##   data: the data set used (might include extra features,
+    ##      modified encodings etc).
+    ##   k_folds: a list of "folds", each of which is a list of
+    ##     indices pointing to the rows in the data set which
+    ##     should be left out.
+    ##   predictions: the results of running the model against
+    ##      the testing set of each fold.
+
+    self <- list()
+
+    self$transform_function <- data_transformation_function
+    self$folds <- k_folds
+    self$predictions <- fold_predictions
+
+    self$transformed_data <- function(data) {
+        return(self$transform_function(data))
+    }
+
+    self$confusion_matrix <- function(data) {
+        transformed_data <- self$transformed_data(data)
+        testing_labels <- lapply(self$folds, function(fold) transformed_data[fold]$label)
+
+        confusion_matrices <- mapply(
+            make_confusion_matrix,
+            testing_labels,
+            self$predictions,
+            SIMPLIFY=FALSE
+        )
+
+        summary_matrix <- Reduce('+', confusion_matrices)
+
+        return(summary_matrix)
+    }
+
+    self$plot_confusion_matrix <- function(data, log=FALSE) {
+        confusion_matrix <- self$confusion_matrix(data)
+
+        if (log==TRUE) {
+            plot_log_confusion_matrix(confusion_matrix)
+        } else {
+            plot_confusion_matrix(confusion_matrix)
+        }
+    }
+
+    return(self)
+}
+
+plot_frequency_table <- function(freq_table) {
+    colnames(freq_table) <- c('Predicted', 'True', 'Frequency')
+
+    # TODO: fill in gaps
+    all_classes <- union(freq_table$Predicted, freq_table$True)
+
+    plot <- ggplot(data=freq_table) +
+        lims(fill=c(0, max(freq_table$Frequency))) +
+        aes(x=Predicted, y=True, fill=Frequency) +
+        geom_raster() +
+        theme(axis.text.x=element_text(angle=90, hjust=1))
+
+    return(plot)
+}
+
+get_classification_errors <- function(confusion_matrix) {
+    confusion_table <- as.data.table(confusion_matrix)
+    colnames(confusion_table) <- c('predicted', 'true', 'frequency')
+    confusion_table[predicted!=true & frequency > 0][order(-frequency)]
+}
+```
+
+This data helps us to group attack types:
+```{r}
+attack_categories <- fread(
+    './data/training_attack_types',
+    col.names=c('attack', 'category')
+)
+# Make these attack names consistent with the main data set
+attack_categories$attack <- sapply(
+    attack_categories$attack,
+    function(name) paste(name, '.', sep='')
+)
+attack_categories$category <- sapply(
+    attack_categories$category,
+    function(name) paste(name, '.', sep='')
+)
+# `normal` isn't really an attack, but add it as it's own
+# category
+attack_categories <- rbind(
+    attack_categories,
+    list('normal.', 'normal.')
+)
+
+# What is `back`? It isn't defined in the task description
+# or any other documentation I can find.
+attack_categories <- rbind(
+    attack_categories,
+    list('back.', 'dos.')
+)
+```
+
+# Weighted Decision Tree
+
+
+# Weighted Decision Tree with 5 k-means clusters
+
+
+# Weighted Decision Tree with normal/non-normal k-NN classes
+
+
+# Random Forest on all features
+
+Apply the random forest to all features:
+```{r eval=FALSE}
+confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 25 minutes
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connection_events[training_indices]
+    testing_data <- connection_events[testing_indices]
+
+    model <- ranger(
+        label~.,
+        data=training_data,
+        ## automatically selected since the 'label' column is a factor, but
+        ## leave this here for clarity:
+        classification=TRUE,
+        importance='impurity'  # gini index
+    )
+
+    variable_importance <- model$variable.importance
+    predictions <- predict(model, data=testing_data)
+
+    confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+    return(confusion_matrix)
+})
+```
+
+```{r eval=FALSE}
+summary_matrix = Reduce('+', confusion_matrices) # confusion_matrices[[1]] + confusion_matrices[[2]] ... confusion_matrices[[n]]
+summary_matrix
+```
+
+To avoid re-running this everytime, save a copy of the results into a file:
+```{r, eval=FALSE, include=FALSE}
+saveRDS(
+  summary_matrix,
+  file='./data/daniel-jones-random-forest-summary-matrix-all-features.rds'
+)
+```
+
+The load it with:
+```{r, eval=TRUE, include=FALSE}
+summary_matrix <- readRDS(
+  file='./data/daniel-jones-random-forest-summary-matrix-all-features.rds'
+)
+```
+
+Plot the confusion matrix:
+```{r}
+plot_log_confusion_matrix(summary_matrix)
+```
+
 
 
 - Data set and general inference goal: we want to identify particular attacks.
