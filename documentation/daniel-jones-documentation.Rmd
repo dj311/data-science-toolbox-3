@@ -1319,9 +1319,8 @@ weights <- sapply(connections$label, function(connection_label) {
     weight <- 1/number_of_occurences
     return(weight)
 })
-k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
 
-connections$k_means_cluster <- get_clusters(training_data)
+connections$k_means_cluster <- get_clusters(connections)
 k_means_decision_tree_model <- rpart(
     label~.,
     data=connections,
@@ -1337,4 +1336,31 @@ saveRDS(
     k_means_decision_tree_results,
     file='./data/daniel-jones-k-means-5-decision-tree-results.rds'
 )
+saveRDS(
+    k_means_decision_tree_model,
+    file='./data/daniel-jones-k-means-5-decision-tree-model.rds'
+)
 ```
+
+```{r}
+k_means_decision_tree_results <- readRDS(
+    file='./data/daniel-jones-k-means-5-decision-tree-results.rds'
+)
+
+k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
+k_means_decision_tree_confusion_matrix <- k_means_decision_tree_results$confusion_matrix(connection_events)
+get_classification_errors(k_means_decision_tree_confusion_matrix)[frequency >= 10]
+```
+
+```{r}
+k_means_decision_tree_model <- readRDS(
+    file='./data/daniel-jones-k-means-5-decision-tree-model.rds'
+)
+
+plot(model)
+text(model)
+
+sort(model$variable.importance)
+```
+
+In short, the k-means clusters aren't considered important by the decision tree, and so don't make the cut!
