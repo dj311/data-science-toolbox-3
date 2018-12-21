@@ -194,6 +194,32 @@ get_classification_errors <- function(confusion_matrix) {
 }
 ```
 
+The following function takes in the list of folds, and a correseponding list of predictions from a model. It will add these predictions as a column to the data frame using the indexes contained in the fold variable:
+```{r}
+add_predictions <- function(data, folds, predictions, new_column_name) {
+    combined_indices <- Reduce(append, folds)
+    combined_predictions <- Reduce(append, predictions)
+
+    combined_predictions <- as.factor(combined_predictions)
+    levels(combined_predictions) <- levels(predictions[[1]])
+
+    predictions_by_index <- data.table(
+        index=combined_indices,
+        prediction=combined_predictions
+    )
+
+    correctly_ordered_predictions <- predictions_by_index[order(index)]$prediction
+
+    new_data <- copy(data)
+    new_data[[new_column_name]] <- correctly_ordered_predictions
+
+    levels(new_data[[new_column_name]]) <- correctly_ordered_predictions
+
+    return(new_data)
+}
+```
+
+
 The taffic labels are grouped by attack type, here we load this mapping in and generate the `attack_categories` data table:
 ```{r}
 attack_categories <- fread(
@@ -217,6 +243,74 @@ attack_categories <- rbind(
     list('normal.', 'normal.')
 )
 ```
+
+# Decision Tree
+
+The code below uses `rpart` for a naive implementation of a decision tree on the KDD-99 data set:
+
+```{r}
+connections <- copy(connection_events)
+
+service_encoder <- dummyVars(~service, data=connections)
+flag_encoder <- dummyVars(~flag, data=connections)
+
+connections <- cbind(
+    connections,
+    as.data.table(predict(service_encoder, newdata=connections)),
+    as.data.table(predict(flag_encoder, newdata=connections))
+)
+
+connections$flag <- NULL
+connections$service <- NULL
+```
+
+```{r eval=FALSE}
+predictions <- mclapply(k_folds, function(fold) {  # approx 15 minutes
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    model <- rpart(
+        label~.,  # this data set only contains one-hot-encoded service columns
+        data=training_data,
+        parms=list(split='information'),
+        method='class',
+        control=list(control=list(minsplit=2))
+    )
+
+    predictions <- predict(model, testing_data, type='class')
+
+    return(predictions)
+})
+```
+
+```{r include=FALSE, eval=FALSE}
+saveRDS(
+    predictions,
+    file='./data/daniel-jones-decision-tree-one-hot.rds'
+)
+```
+
+```{r include=FALSE, eval=TRUE}
+predictions <- readRDS(file='./data/daniel-jones-decision-tree-one-hot.rds')
+```
+
+
+```{r}
+testing_labels <- lapply(k_folds, function(fold) connections[fold]$label)
+confusion_matrices <- mapply(
+    make_confusion_matrix,
+    testing_labels,
+    predictions,
+    SIMPLIFY=FALSE
+)
+summary_matrix <- Reduce('+', confusion_matrices)
+plot_log_confusion_matrix(summary_matrix)
+ggsave('./figures/decision-tree-confusion-matrix.pdf', width=6, height=5)
+```
+
 
 # Weighted Decision Tree
 ```{r eval=FALSE}
@@ -327,6 +421,8 @@ weighted_decision_tree_model <- readRDS(
 
 ```{r}
 weighted_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
+ggsave('./figures/weighted-decision-tree-confusion-matrix.pdf', width=6, height=5)
+
 classification_errors <- get_classification_errors(weighted_decision_tree_results$confusion_matrix(connection_events))
 
 predicted_categories <- sapply(
