@@ -23,6 +23,7 @@ library(parallel)
 library(magrittr)
 library(dplyr)
 library(BBmisc)
+library(class)
 
 set.seed(0xC0FFEE)
 
@@ -1243,12 +1244,12 @@ transform_data_for_k_means <- function(data) {
     return(data)
 }
 
-get_clusters <- function(data) {
+get_clusters <- function(data, num_clusters=20) {
     kmeansdata <- transform_data_for_k_means(data)
 
     # K-means: 5 catogries (Trying to devided the attacks type into
     # 4 automatically)
-    Cluster <- kmeans(kmeansdata, 5, nstart = 20)
+    Cluster <- kmeans(kmeansdata, num_clusters, nstart=20)
 
     rm(kmeansdata)
     gc()
@@ -1286,7 +1287,7 @@ fold_predictions <- lapply(k_folds, function(fold) {
         return(weight)
     })
 
-    training_data$k_means_cluster <- get_clusters(training_data)
+    training_data$k_means_cluster <- get_clusters(training_data, 5)
     gc()
 
     model <- rpart(
@@ -1298,7 +1299,7 @@ fold_predictions <- lapply(k_folds, function(fold) {
         weights=training_weights
     )
 
-    testing_data$k_means_cluster <- get_clusters(testing_data)
+    testing_data$k_means_cluster <- get_clusters(testing_data, 5)
     predictions <- predict(model, testing_data, type='class')
 
     rm(training_data)
@@ -1320,7 +1321,7 @@ weights <- sapply(connections$label, function(connection_label) {
     return(weight)
 })
 
-connections$k_means_cluster <- get_clusters(connections)
+connections$k_means_cluster <- get_clusters(connections, 5)
 k_means_decision_tree_model <- rpart(
     label~.,
     data=connections,
@@ -1366,10 +1367,11 @@ sort(k_means_decision_tree_model$variable.importance)
 Here you can see that k-means cluster is cons
 
 
-## K-NN for normal and non-normal added to decision trees
-```{r}
-connections <- copy(connection_events)
+## K-NN for normal and non-normal added to decision trees (k-NN never finishes)
 
+Don't run this it doesn't work. KNN never finishes. I'm doing something wrong, but the docs are non-existent.
+
+```{r}
 knn_transform <- function(data) {
     data <- copy(data)
 
@@ -1377,9 +1379,21 @@ knn_transform <- function(data) {
         data$label,
         function(label) if (label == 'normal.') 'normal.' else 'non-normal.'
     )
+    data$label <- factor(data$label)
+    data$protocol_type <- as.integer(factor(data$protocol_type))
+
+    data <- normalize(
+        data,
+        method="standardize",
+        range=c(0, 1),
+        margin=1L,
+        on.constant="quiet"
+    )
 
     return(data)
 }
+
+connections <- decision_tree_transform(connection_events)
 
 fold_predictions <- lapply(k_folds, function(fold) { 
     training_indices <- -fold
@@ -1388,16 +1402,172 @@ fold_predictions <- lapply(k_folds, function(fold) {
     training_data <- connections[training_indices]
     testing_data <- connections[testing_indices]
 
-    knn_model <- train(
-        label~.,
-        data=knn_transform(training_data),
-        method="knn",
-        preProcess=c("center","scale"),
+    # Split the training set in half. One thrid is used to train the k-NN, and
+    # the rest is used for the k-NN to give predictions. The decision tree
+    # is then trainend on the latter set.
+
+    # Theres a trade-off here: we must reduce the meta-algorithm's training set
+    # to improve the embedded classifier.
+
+    knn_training_indices <- sample(nrow(training_data), 0.33*nrow(training_data))
+    knn_testing_indices <- -knn_training_indices
+
+    knn_training_data <- knn_transform(training_data[knn_training_indices])
+    knn_training_labels <- knn_training_data$label
+    knn_training_data$label <- NULL
+
+    knn_testing_data <- knn_transform(training_data[knn_testing_indices])
+    knn_testing_data$label <- NULL  # just throw em away
+
+    knn_predicted_labels <- knn(
+        train=knn_training_data,
+        cl=knn_training_labels,
+        test=knn_testing_data,
+        k=5
     )
 
-    predictions <- predict(knn_model, newdata=knn_transform(testing_data))
+    tree_training_data <- training_data[knn_testing_indices]
+    tree_training_data$knn_label <- knn_predicted_labels
+
+    tree_training_weights <- sapply(tree_training_data$label, function(connection_label) {
+        number_of_occurences <- number_of_label_occurrences[[connection_label]]
+        weight <- 1/number_of_occurences
+        return(weight)
+    })
+
+    model <- rpart(
+        label~.,
+        data=tree_training_data,
+        parms=list(split='information'),
+        method='class',
+        control=list(control=list(minsplit=2)),
+        weights=tree_training_weights
+    )
+
+    # For testing we do the same, use the knn_training_set, but apply it to the
+    # testing data set:
+    knn_testing_data <- knn_transform(testing_data)
+    knn_predicted_labels <- knn(
+        train=knn_training_data,
+        cl=knn_training_labels,
+        test=knn_testing_data,
+        k=5
+    )
+    testing_data$knn_label <- knn_predicted_labels
+
+    predictions <- predict(model, testing_data, type='class')
 
     return(predictions)
-}
+})
 
+saveRDS(fold_predictions, file='./data/k-nn-fold-predictions.rds')
 ```
+
+
+## k-means for normal and non-normal added to decision trees
+
+```{r}
+# This takes > an hour on my laptop, and requires approx 6GB
+# of RAM. Theres a memory leak in here somewhere but I haven't
+# found it - hence the scattering of gc() and rm() calls.
+
+# Output has been saved below so you don't have to run it.
+
+connections <- decision_tree_transform(connection_events)
+
+fold_predictions <- lapply(k_folds, function(fold) {
+    print("start")
+    gc()
+
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    training_weights <- sapply(training_data$label, function(connection_label) {
+        number_of_occurences <- number_of_label_occurrences[[connection_label]]
+        weight <- 1/number_of_occurences
+        return(weight)
+    })
+
+    training_data$k_means_cluster <- get_clusters(training_data, 2)
+    gc()
+
+    model <- rpart(
+        label~.,
+        data=training_data,
+        parms=list(split='information'),
+        method='class',
+        control=list(control=list(minsplit=2)),
+        weights=training_weights
+    )
+
+    testing_data$k_means_cluster <- get_clusters(testing_data, 2)
+    predictions <- predict(model, testing_data, type='class')
+
+    rm(training_data)
+    rm(testing_data)
+
+    return(predictions)
+})
+
+k_means_decision_tree_results <- ModelResults(
+    data_transformation_function=decision_tree_transform,
+    k_folds=k_folds,
+    fold_predictions=fold_predictions
+)
+
+# Save a model for analysis, training it on the whole data set:
+weights <- sapply(connections$label, function(connection_label) {
+    number_of_occurences <- number_of_label_occurrences[[connection_label]]
+    weight <- 1/number_of_occurences
+    return(weight)
+})
+
+connections$k_means_cluster <- get_clusters(connections, 2)
+k_means_decision_tree_model <- rpart(
+    label~.,
+    data=connections,
+    parms=list(split='information'),
+    method='class',
+    control=list(control=list(minsplit=2)),
+    weights=weights
+)
+```
+
+```{r}
+saveRDS(
+    k_means_decision_tree_results,
+    file='./data/daniel-jones-k-means-2-decision-tree-results.rds'
+)
+saveRDS(
+    k_means_decision_tree_model,
+    file='./data/daniel-jones-k-means-2-decision-tree-model.rds'
+)
+```
+
+```{r}
+k_means_decision_tree_results <- readRDS(
+    file='./data/daniel-jones-k-means-2-decision-tree-results.rds'
+)
+k_means_decision_tree_model <- readRDS(
+    file='./data/daniel-jones-k-means-2-decision-tree-model.rds'
+)
+```
+
+
+```{r}
+k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
+k_means_decision_tree_confusion_matrix <- k_means_decision_tree_results$confusion_matrix(connection_events)
+get_classification_errors(k_means_decision_tree_confusion_matrix)[frequency >= 10]
+```
+
+```{r}
+plot(k_means_decision_tree_model)
+text(k_means_decision_tree_model)
+
+sort(k_means_decision_tree_model$variable.importance)
+```
+
+Here you can see that k-means cluster has not been used.
