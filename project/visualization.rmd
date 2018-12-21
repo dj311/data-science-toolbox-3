@@ -35,15 +35,13 @@ connection_events <- read.csv(
 setDT(connection_events)  # convert from data.frame to data.table
 ```
 
-Set up a common set of k-folds for model validation:
-```{r eval=FALSE}
-k_folds <- createFolds(connection_events$label, k=100)
-```
 
-
+Run tsne on a random, stratified sample of 1% of the data:
 ```{r eval=FALSE}
-training_indices = -k_folds[[1]]
-testing_indices = k_folds[[1]]
+samples <- createFolds(connection_events$label, k=100)
+
+training_indices = -samples[[1]]
+testing_indices = samples [1]]
 
 training_data <- connections[training_indices]
 testing_data <- connections[testing_indices]
