@@ -307,7 +307,7 @@ confusion_matrices <- mapply(
 )
 summary_matrix <- Reduce('+', confusion_matrices)
 plot_log_confusion_matrix(summary_matrix)
-ggsave('./figures/decision-tree-confusion-matrix.pdf', width=6, height=5)
+ggsave('./figures/decision-tree-confusion-matrix.png', width=6, height=5)
 ```
 
 ```{r}
@@ -431,7 +431,7 @@ weighted_decision_tree_model <- readRDS(
 
 ```{r}
 weighted_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
-ggsave('./figures/weighted-decision-tree-confusion-matrix.pdf', width=6, height=5)
+ggsave('./figures/weighted-decision-tree-confusion-matrix.png', width=6, height=5)
 
 classification_errors <- get_classification_errors(weighted_decision_tree_results$confusion_matrix(connection_events))
 
@@ -449,6 +449,7 @@ classification_errors$true_category <- true_categories
 
 classification_errors[Frequency>=10]
 ```
+
 
 ```{r}
 total_errors <- sum(classification_errors$Frequency)
@@ -589,7 +590,7 @@ k_means_decision_tree_model <- readRDS(
 
 ```{r}
 k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
-ggsave('./figures/embedded-k-means-5-confusion-matrix.pdf', width=6, height=5)
+ggsave('./figures/embedded-k-means-5-confusion-matrix.png', width=6, height=5)
 ```
 
 ```{r}
@@ -606,10 +607,11 @@ total_errors
 ```
 
 ```{r}
+pdf("./figures/embedded-k-means-5-tree.pdf", width=7, height=10)
+
 plot(k_means_decision_tree_model)
 text(k_means_decision_tree_model)
 
-dev.copy(pdf,"./figures/embedded-k-means-5-tree.pdf", width=6, height=10)
 dev.off()
 ```
 
@@ -717,7 +719,7 @@ k_means_decision_tree_model <- readRDS(
 
 ```{r}
 k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
-ggsave('./figures/embedded-k-means-2-confusion-matrix.pdf', width=6, height=5)
+ggsave('./figures/embedded-k-means-2-confusion-matrix.png', width=6, height=5)
 ```
 
 ```{r}
@@ -737,7 +739,7 @@ total_errors
 plot(k_means_decision_tree_model)
 text(k_means_decision_tree_model)
 
-dev.copy(pdf,"./figures/embedded-k-means-2-tree.pdf", width=6, height=10)
+dev.copy(png,"./figures/embedded-k-means-2-tree.png", width=6, height=10)
 dev.off()
 ```
 
@@ -800,7 +802,7 @@ summary_matrix <- readRDS(
 Plot the confusion matrix:
 ```{r}
 plot_log_confusion_matrix(summary_matrix)
-ggsave('./figures/random-forest-confusion-matrix.pdf', width=6, height=5)
+ggsave('./figures/random-forest-confusion-matrix.png', width=6, height=5)
 ```
 
 ```{r}
@@ -812,3 +814,4 @@ classification_errors
 total_errors <- sum(classification_errors$Frequency)
 total_errors
 ```
+
