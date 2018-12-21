@@ -1,4 +1,4 @@
-# test
+# test for choosing 200 data randomly
 sam <- sample(494020,200)
 
 Labels<-connection_events$label[sam]
