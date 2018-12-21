@@ -1,3 +1,5 @@
+library(Rtsne)
+
 # test for choosing 200 data randomly
 sam <- sample(494020,200)
 
