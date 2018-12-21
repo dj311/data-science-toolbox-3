@@ -71,8 +71,7 @@ To use them for k-fold cross-validation:
   3. Select all other connection events as the training set.
   4. Train your model and get your predictions from the test set.
 
-
-Utility Functions:
+We've defined some utility functions to help keep our work consistent:
 ```{r}
 # Define a function for this to make sure all of our confusion matrices use
 # consistent labelling and axis' for true/predicted classes.
@@ -190,11 +189,11 @@ plot_frequency_table <- function(freq_table) {
 get_classification_errors <- function(confusion_matrix) {
     confusion_table <- as.data.table(confusion_matrix)
     colnames(confusion_table) <- c('Predicted', 'True', 'Frequency')
-    confusion_table[predicted!=true & frequency > 0][order(-frequency)]
+    confusion_table[Predicted!=True & Frequency > 0][order(-Frequency)]
 }
 ```
 
-The following function takes in the list of folds, and a correseponding list of predictions from a model. It will add these predictions as a column to the data frame using the indexes contained in the fold variable:
+The following function takes in the list of folds, and a corresponding list of predictions from a model. It will add these predictions as a column to the data frame using the indexes contained in the fold variable:
 ```{r}
 add_predictions <- function(data, folds, predictions, new_column_name) {
     combined_indices <- Reduce(append, folds)
@@ -311,8 +310,19 @@ plot_log_confusion_matrix(summary_matrix)
 ggsave('./figures/decision-tree-confusion-matrix.pdf', width=6, height=5)
 ```
 
+```{r}
+classification_errors <- get_classification_errors(summary_matrix)
+classification_errors[Frequency >= 10]
+```
+
+```{r}
+total_errors <- sum(classification_errors$Frequency)
+total_errors
+```
+
 
 # Weighted Decision Tree
+
 ```{r eval=FALSE}
 decision_tree_transform <- function(data) {
     connections <- copy(data)
@@ -437,15 +447,16 @@ true_categories <- sapply(
 classification_errors$predicted_category <- predicted_categories
 classification_errors$true_category <- true_categories
 
-classification_errors
+classification_errors[Frequency>=10]
+```
+
+```{r}
+total_errors <- sum(classification_errors$Frequency)
+total_errors
 ```
 
 
-
-
 # Weighted Decision Tree with 5 k-means clusters
-
-From results above it is clear that the vast majority of errors are from false predictions of normal trafffic for truly malicious traffic. This seems to be well distributed across all attack types.
 
 This code uses Junfan's k-means clustering to add a new feature which is then fed into the decision tree.
 
@@ -574,29 +585,167 @@ k_means_decision_tree_results <- readRDS(
 k_means_decision_tree_model <- readRDS(
     file='./data/daniel-jones-k-means-5-decision-tree-model.rds'
 )
-
 ```
 
 ```{r}
 k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
-k_means_decision_tree_confusion_matrix <- k_means_decision_tree_results$confusion_matrix(connection_events)
-get_classification_errors(k_means_decision_tree_confusion_matrix)[frequency >= 10]
+ggsave('./figures/embedded-k-means-5-confusion-matrix.pdf', width=6, height=5)
+```
+
+```{r}
+k_means_decision_tree_confusion_matrix <-
+    k_means_decision_tree_results$confusion_matrix(connection_events)
+
+classification_errors <- get_classification_errors(k_means_decision_tree_confusion_matrix)
+classification_errors[Frequency >= 10]
+```
+
+```{r}
+total_errors <- sum(classification_errors$Frequency)
+total_errors
 ```
 
 ```{r}
 plot(k_means_decision_tree_model)
 text(k_means_decision_tree_model)
 
+dev.copy(pdf,"./figures/embedded-k-means-5-tree.pdf", width=6, height=10)
+dev.off()
+```
+
+```{r}
 sort(k_means_decision_tree_model$variable.importance)
 ```
 
 Here you can see that k-means cluster is able to add information towards rare classes which is then used by the decision tree!
 
 
-# Weighted Decision Tree with normal/non-normal k-NN classes
+# Weighted Decision Tree with 2 k-means clusters classes
 
-TODO(DAN): model is still running, will copy over when done
+From results above it is clear that the vast majority of errors are from false predictions of normal trafffic for truly malicious traffic. This seems to be well distributed across all attack types. Can we use k-means with two clusters and hope that it is able to distinguish normal from non-normal traffic. Note: We planned for this to be done via k-NN so that we could be sure that we were creating clusters for normal and non-normal traffic, however, we had trouble getting the k-NN model to work in R.
 
+
+```{r eval=FALSE}
+# This takes > an hour on my laptop, and requires approx 6GB
+# of RAM. Theres a memory leak in here somewhere but I haven't
+# found it - hence the scattering of gc() and rm() calls.
+
+# Output has been saved below so you don't have to run it.
+
+connections <- decision_tree_transform(connection_events)
+
+fold_predictions <- lapply(k_folds, function(fold) {
+    gc()
+
+    training_indices <- -fold
+    testing_indices <- fold
+
+    training_data <- connections[training_indices]
+    testing_data <- connections[testing_indices]
+
+    training_weights <- sapply(training_data$label, function(connection_label) {
+        number_of_occurences <- number_of_label_occurrences[[connection_label]]
+        weight <- 1/number_of_occurences
+        return(weight)
+    })
+
+    training_data$k_means_cluster <- get_clusters(training_data, 2)
+    gc()
+
+    model <- rpart(
+        label~.,
+        data=training_data,
+        parms=list(split='information'),
+        method='class',
+        control=list(control=list(minsplit=2)),
+        weights=training_weights
+    )
+
+    testing_data$k_means_cluster <- get_clusters(testing_data, 2)
+    predictions <- predict(model, testing_data, type='class')
+
+    rm(training_data)
+    rm(testing_data)
+
+    return(predictions)
+})
+
+k_means_decision_tree_results <- ModelResults(
+    data_transformation_function=decision_tree_transform,
+    k_folds=k_folds,
+    fold_predictions=fold_predictions
+)
+
+# Save a model for analysis, training it on the whole data set:
+weights <- sapply(connections$label, function(connection_label) {
+    number_of_occurences <- number_of_label_occurrences[[connection_label]]
+    weight <- 1/number_of_occurences
+    return(weight)
+})
+
+connections$k_means_cluster <- get_clusters(connections, 2)
+k_means_decision_tree_model <- rpart(
+    label~.,
+    data=connections,
+    parms=list(split='information'),
+    method='class',
+    control=list(control=list(minsplit=2)),
+    weights=weights
+)
+```
+
+```{r eval=FALSE, include=FALSE}
+saveRDS(
+    k_means_decision_tree_results,
+    file='./data/daniel-jones-k-means-2-decision-tree-results.rds'
+)
+saveRDS(
+    k_means_decision_tree_model,
+    file='./data/daniel-jones-k-means-2-decision-tree-model.rds'
+)
+```
+
+```{r eval=TRUE, include=FALSE}
+k_means_decision_tree_results <- readRDS(
+    file='./data/daniel-jones-k-means-2-decision-tree-results.rds'
+)
+k_means_decision_tree_model <- readRDS(
+    file='./data/daniel-jones-k-means-2-decision-tree-model.rds'
+)
+```
+
+
+```{r}
+k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
+ggsave('./figures/embedded-k-means-2-confusion-matrix.pdf', width=6, height=5)
+```
+
+```{r}
+k_means_decision_tree_confusion_matrix <-
+    k_means_decision_tree_results$confusion_matrix(connection_events)
+
+classification_errors <- get_classification_errors(k_means_decision_tree_confusion_matrix)
+classification_errors[Frequency >= 10]
+```
+
+```{r}
+total_errors <- sum(classification_errors$Frequency)
+total_errors
+```
+
+```{r}
+plot(k_means_decision_tree_model)
+text(k_means_decision_tree_model)
+
+dev.copy(pdf,"./figures/embedded-k-means-2-tree.pdf", width=6, height=10)
+dev.off()
+```
+
+```{r}
+sort(k_means_decision_tree_model$variable.importance)
+```
+
+Here you can see that k-means cluster has not been used. Maybe this is because of the greedy algorithm? Even thoug it is quite good.
 
 
 # Random Forest on all features
@@ -651,13 +800,15 @@ summary_matrix <- readRDS(
 Plot the confusion matrix:
 ```{r}
 plot_log_confusion_matrix(summary_matrix)
+ggsave('./figures/random-forest-confusion-matrix.pdf', width=6, height=5)
 ```
 
+```{r}
+classification_errors <- get_classification_errors(summary_matrix)
+classification_errors
+```
 
-
-- Data set and general inference goal: we want to identify particular attacks.
-- What's a random forest?
-- What's a decision tree?
-- Train data on random forest, show visualisation.
-- Visualisation shows how we split on "information gain".
-- Analyse performance of baseline model.
+```{r}
+total_errors <- sum(classification_errors$Frequency)
+total_errors
+```
