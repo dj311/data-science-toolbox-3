@@ -1,0 +1,106 @@
+```{r setup, include=FALSE}
+library(caret)
+library(data.table)
+library(e1071)
+library(ggplot2)
+library(ranger)
+library(knitr)
+library(rpart)
+library(parallel)
+library(magrittr)
+library(dplyr)
+library(BBmisc)
+library(Rtsne)
+
+set.seed(0xC0FFEE)
+
+knitr::opts_knit$set(root.dir='../')
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+```{r load_data_set, include=FALSE}
+columns <- read.table(
+    "./data/kddcup.names",
+    sep=":",
+    skip=1,  # the first column name are the labels, but those are at the end!
+    as.is=T
+)
+column_names <- c(columns[,1], 'label')
+
+connection_events <- read.csv(
+    "./data/kddcup.data_10_percent.gz",
+    col.names=column_names
+)
+
+setDT(connection_events)  # convert from data.frame to data.table
+```
+
+Set up a common set of k-folds for model validation:
+```{r eval=FALSE}
+k_folds <- createFolds(connection_events$label, k=100)
+```
+
+
+```{r eval=FALSE}
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+
+training_data <- connections[training_indices]
+testing_data <- connections[testing_indices]
+
+model <- rpart(
+    label~.,  # this data set only contains one-hot-encoded service columns
+    data=training_data,
+    parms=list(split='information'),
+    method='class',
+    control=list(control=list(minsplit=2))
+)
+
+predictions <- predict(model, testing_data, type='class')
+
+connections[testing_indices]$label
+
+
+```
+
+```{r}
+data <- predictions
+
+sam <- testing_indices
+
+Labels <- connection_events$label[sam]
+
+connection_events$label[sam] <- as.factor(connection_events$label[sam])
+## for plotting
+colors = rainbow(length(unique(connection_events$label[sam])))
+names(colors) = unique(connection_events$label[sam])
+colorslabel<-c()
+for(i in connection_events$label[sam]){
+  colorslabel <- c(colorslabel,colors[name=i])
+}
+
+
+ts <- Rtsne(connection_events[sam,-42], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates=FALSE)
+# real label
+plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
+
+
+# plot prediction label
+sample <- data
+Labels <- sample
+sample <- as.factor(sample)
+
+colorslabel2<-c()
+for(i in sample){
+  colorslabel2 <- c(colorslabel2,colors[name=i])
+}
+
+unique(sample)
+plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
+#legend(ts$Y, unique(sample), fill = NULL, col = colorslabel2)
+
+
+# try to add legend..
+plot(ts$Y,  main="tSNE","cex.main"=2, "cex.lab"=1.5)
+text(ts$Y, labels=connection_events$label[sam], col=colors[connection_events$label[sam]])
+```
