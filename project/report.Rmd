@@ -527,8 +527,8 @@ for(i in 1:5){
 
 for(i in 1:5){
   variablename = paste("kmeans", i, sep = "_")
-  columnname = paste("is_kmeans", i, sep = "_")
-  assign(variablename, model_5[model_5$columnname==1])
+  columnname = paste0("is_kmeans", i)
+  assign(variablename, model_5[model_5[[columnname]]==1])
 }
 
 model_5
