@@ -1,5 +1,5 @@
 ---
-title: "Report: Source Code for Simluations and Figure"
+title: "Report: Source Code for Simluations and Figures"
 author: "Junfan Huang and Daniel Jones"
 date: "10/12/2018"
 output:
@@ -511,6 +511,7 @@ There are 5 main categories of traffic:
 We hope that using k-means with 5 clusters will identify these different types of traffic.
 
 ```{r}
+set.seed(20)
 Cluster <- kmeans(kmeansdata, 5, nstart = 20)
 ```
 
@@ -538,6 +539,7 @@ model_5
 Here, we run k-means looking for categories, to find some features are new which may be really good for finding feature importance. This new data has been named `model_20`:
 
 ```{r}
+set.seed(20)
 Cluster1 <- kmeans(kmeansdata, 20, nstart = 20)
 ```
 
