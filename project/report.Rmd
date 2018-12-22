@@ -36,20 +36,26 @@ knitr::opts_chunk$set(echo=TRUE)
 ```
 
 ```{r load_data_set}
-columns <- read.table(
-    "./data/kddcup.names",
-    sep=":",
-    skip=1,  # the first column name are the labels, but those are at the end!
-    as.is=T
-)
-column_names <- c(columns[,1], 'label')
+load_data <- function() {
+    columns <- read.table(
+        "./data/kddcup.names",
+        sep=":",
+        skip=1,  # the first column name are the labels, but those are at the end!
+        as.is=T
+    )
+    column_names <- c(columns[,1], 'label')
 
-connection_events <- read.csv(
-    "./data/kddcup.data_10_percent.gz",
-    col.names=column_names
-)
+    connection_events <- read.csv(
+        "./data/kddcup.data_10_percent.gz",
+        col.names=column_names
+    )
 
-setDT(connection_events)  # convert from data.frame to data.table
+    setDT(connection_events)  # convert from data.frame to data.table
+
+    return(connection_events)
+}
+
+connection_events <- load_data()
 ```
 
 Set up a common set of k-folds for model validation.
@@ -483,6 +489,10 @@ total_errors
 Get the data ready for k-means: since it uses a distance metric all categorical variables need to be encoded as numbers. The data set is then normalized.
 
 ```{r}
+rm(connection_events)
+gc()
+connection_events <- load_data()
+
 connection_events$protocol_type <- as.integer(factor(connection_events$protocol_type))
 connection_events$service <- as.integer(factor(connection_events$service))
 connection_events$flag <- as.integer(factor(connection_events$flag))
@@ -551,9 +561,13 @@ k_folds <- createFolds(model_20$label, k=10)
 
 # Embedding 5 cluster k-means in a Decision Tree
 
-This code uses the k-means clustering from earlier to add a new identifying which of the 5 clusters each data point is in. This new dataset is then fed into the decision tree model as before:
+This code uses the k-means clustering from earlier to add a new identifying which of the 5 clusters each data point is in. This new dataset is then fed into the decision tree model as before. We make sure to regerenate the clusters within each of the ten training folds, to avoid inadvertantly leaking data from the testing set.
 
 ```{r}
+rm(connection_events)
+gc()
+connection_events <- load_data()
+
 transform_data_for_k_means <- function(data) {
     data <- copy(data)
 
