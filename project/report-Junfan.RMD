@@ -506,6 +506,70 @@ confusion_matrix
 
 print(sum(diag(confusion_matrix))/sum(confusion_matrix))
 ```
+How about create a smaller one
+```{r}
+connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+final=data.frame()
+for(i in unique(connection_events$label)){
+  if(i=="normal."){
+    temp <- connection_events
+    temp2 <- temp[which(temp$label=="normal."),]
+    final=rbind(final,temp2)
+  }
+  else{
+    name = paste0("resample_",i)
+    temp <-connection_events %>% 
+      filter(connection_events$label == "normal." | connection_events$label == i)
+    temp <- ovun.sample(label ~ ., data = temp, method="over", N=114554)$data
+    temp2 <- temp[which(temp$label!="normal."),]
+    assign(name,temp)
+    final=rbind(final,temp2)
+  }
+}
+connection_events <- final
+
+# update levels
+
+connection_events$label<-factor(connection_events$label)
+```
+
+Performance
+```{r}
+k_folds <- createFolds(connection_events$label, k=10)
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+model <- ranger(
+    label~.,
+    data=training_data,
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+
+For the original data
+```{r}
+predictions <- predict(model, data=originaldata)
+
+confusion_matrix <- table(originaldata$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+```
+
+If we compared with the ipsweep, we would find that the errors on ipsweep and nmap disappeared. Also, the performance of predicting ftp_write, multihop, portsweep, etc. increased.(it is worth to create new data for them). However, the ipsweep showed no improvement.
+
 # Oversampling with both real data(the probe attacks from full dataset) and new data with smaller size(created by SMOTE)
 ```{r}
 connection_events <- readRDS(file='./data/resampling_events(add_probe).rds')
@@ -559,6 +623,18 @@ model <- ranger(
     classification=TRUE
 )
 
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+
+
+```{r}
 predictions <- predict(model, data=testing_data)
 
 confusion_matrix <- table(testing_data$label, predictions$predictions)
