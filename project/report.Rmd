@@ -538,7 +538,7 @@ for(i in 1:20){
   name = paste0("is_kmeans_20_",i)
   model_20[[name]]<- as.integer(Cluster1$`cluster`==i)
 }
-saveRDS(summary_matrix, file='../data/Kmeans-20-features.rds')
+saveRDS(summary_matrix, file='./data/Kmeans-20-features.rds')
 ```
 
 
