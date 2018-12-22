@@ -1,5 +1,5 @@
 ---
-title: "Data Science Toolbox 3: Report"
+title: "Report: Source Code for Simluations and Figure"
 author: "Junfan Huang and Daniel Jones"
 date: "10/12/2018"
 output:
@@ -12,8 +12,9 @@ documentclass: amsart
 monofont: "Source Code Pro"
 ---
 
+Load in any libraries we need, and the data. Running `R --file install.R` should install any missing dependencies.
 
-```{r setup, include=FALSE}
+```{r setup}
 library(caret)
 library(data.table)
 library(e1071)
@@ -25,6 +26,8 @@ library(parallel)
 library(magrittr)
 library(dplyr)
 library(BBmisc)
+library(Rtsne)
+library(ROSE)
 
 set.seed(0xC0FFEE)
 
@@ -32,7 +35,7 @@ knitr::opts_knit$set(root.dir='../')
 knitr::opts_chunk$set(echo=TRUE)
 ```
 
-```{r load_data_set, include=FALSE}
+```{r load_data_set}
 columns <- read.table(
     "./data/kddcup.names",
     sep=":",
@@ -49,7 +52,7 @@ connection_events <- read.csv(
 setDT(connection_events)  # convert from data.frame to data.table
 ```
 
-Set up a common set of k-folds for model validation:
+Set up a common set of k-folds for model validation.
 ```{r eval=FALSE}
 k_folds <- createFolds(connection_events$label, k=10)
 ```
@@ -121,12 +124,16 @@ plot_confusion_matrix <- function(confusion_matrix) {
 
 
 ModelResults <- function(data_transformation_function, k_folds, fold_predictions) {
-    ## Class to save the results from a model test. Takes:
-    ##   data: the data set used (might include extra features,
-    ##      modified encodings etc).
+    ## "Class" to save the results from a model test. Takes:
+    ##
+    ##   data_transformation_function: function which takes in
+    ##      the kdd-99 data and returns a data set ready for
+    ##      the model.
+    ##
     ##   k_folds: a list of "folds", each of which is a list of
     ##     indices pointing to the rows in the data set which
     ##     should be left out.
+    ##
     ##   predictions: the results of running the model against
     ##      the testing set of each fold.
 
@@ -172,7 +179,6 @@ ModelResults <- function(data_transformation_function, k_folds, fold_predictions
 plot_frequency_table <- function(freq_table) {
     colnames(freq_table) <- c('Predicted', 'True', 'Frequency')
 
-    # TODO: fill in gaps
     all_classes <- union(freq_table$Predicted, freq_table$True)
 
     plot <- ggplot(data=freq_table) +
@@ -212,7 +218,7 @@ add_predictions <- function(data, folds, predictions, new_column_name) {
     new_data <- copy(data)
     new_data[[new_column_name]] <- correctly_ordered_predictions
 
-    levels(new_data[[new_column_name]]) <- correctly_ordered_predictions
+    levels(new_data[[new_column_name]]) <- levels(correctly_ordered_predictions)
 
     return(new_data)
 }
@@ -243,9 +249,13 @@ attack_categories <- rbind(
 )
 ```
 
+
+Each of the headings below represents a model, and the code used to generate it's figures. In general, if a model takes a long time to run, we've saved the results, and a code snippet below shows how to load in those results (and skip running the model yourself).
+
+
 # Decision Tree
 
-The code below uses `rpart` for a naive implementation of a decision tree on the KDD-99 data set:
+This section uses `rpart` for a direct implementation of a decision tree on the KDD-99 data set. Beforehand, some of the categorical variables with many levels are one-hot encoded. It seems the `rpart` algorithm will run seemingly forever if you have variables with more than 30 levels.
 
 ```{r}
 connections <- copy(connection_events)
@@ -263,6 +273,7 @@ connections$flag <- NULL
 connections$service <- NULL
 ```
 
+This runs the model on all 10-folds and produces a set of predictions per fold (a code snippet below will load in its results, if you'd prefer not to run this).
 ```{r eval=FALSE}
 predictions <- mclapply(k_folds, function(fold) {  # approx 15 minutes
     training_indices <- -fold
@@ -272,7 +283,7 @@ predictions <- mclapply(k_folds, function(fold) {  # approx 15 minutes
     testing_data <- connections[testing_indices]
 
     model <- rpart(
-        label~.,  # this data set only contains one-hot-encoded service columns
+        label~.,
         data=training_data,
         parms=list(split='information'),
         method='class',
@@ -286,6 +297,7 @@ predictions <- mclapply(k_folds, function(fold) {  # approx 15 minutes
 ```
 
 ```{r include=FALSE, eval=FALSE}
+# Save our results
 saveRDS(
     predictions,
     file='./data/daniel-jones-decision-tree-one-hot.rds'
@@ -293,10 +305,11 @@ saveRDS(
 ```
 
 ```{r include=FALSE, eval=TRUE}
+# Load in our results
 predictions <- readRDS(file='./data/daniel-jones-decision-tree-one-hot.rds')
 ```
 
-
+Generate the expected labels for each of tehese 10 folds, and make a summary confusion matrix for them.
 ```{r}
 testing_labels <- lapply(k_folds, function(fold) connections[fold]$label)
 confusion_matrices <- mapply(
@@ -322,6 +335,8 @@ total_errors
 
 
 # Weighted Decision Tree
+
+Extension of the above model which will give increasingly penalties for misidentifying rare events. The specific equation used is given in the main report.
 
 ```{r eval=FALSE}
 decision_tree_transform <- function(data) {
@@ -429,6 +444,9 @@ weighted_decision_tree_model <- readRDS(
 )
 ```
 
+
+Combine the results and plot a confusion matrix. A table showing the most common errors is generated, and we also consider which of the broader attack categories each error belonged to:
+
 ```{r}
 weighted_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
 ggsave('./figures/weighted-decision-tree-confusion-matrix.png', width=6, height=5)
@@ -451,6 +469,8 @@ classification_errors[Frequency>=10]
 ```
 
 
+For the report, figure out the total number of errors. We ended up using "toal errors" as a key metric for comparison, which, along with a visual representation of the which types caused these errors (a confusion matrix) gives a nice summary view of the models results.
+
 ```{r}
 total_errors <- sum(classification_errors$Frequency)
 total_errors
@@ -459,7 +479,7 @@ total_errors
 
 # Weighted Decision Tree with 5 k-means clusters
 
-This code uses Junfan's k-means clustering to add a new feature which is then fed into the decision tree.
+This code uses the k-means clustering from earlier to add a new identifying which of the 5 clusters each data point is in. This new dataset is then fed into the decision tree model as before:
 
 ```{r}
 transform_data_for_k_means <- function(data) {
@@ -588,11 +608,13 @@ k_means_decision_tree_model <- readRDS(
 )
 ```
 
+Plot and save the confusion matrix:
 ```{r}
 k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
 ggsave('./figures/embedded-k-means-5-confusion-matrix.png', width=6, height=5)
 ```
 
+Summatrise the errors:
 ```{r}
 k_means_decision_tree_confusion_matrix <-
     k_means_decision_tree_results$confusion_matrix(connection_events)
@@ -601,11 +623,13 @@ classification_errors <- get_classification_errors(k_means_decision_tree_confusi
 classification_errors[Frequency >= 10]
 ```
 
+How many were there in total?
 ```{r}
 total_errors <- sum(classification_errors$Frequency)
 total_errors
 ```
 
+To further analyse the model, we plot the generated decision tree, and consider the importance of each predictor variable as determined by the model:
 ```{r}
 pdf("./figures/embedded-k-means-5-tree.pdf", width=7, height=10)
 
@@ -619,12 +643,16 @@ dev.off()
 sort(k_means_decision_tree_model$variable.importance)
 ```
 
-Here you can see that k-means cluster is able to add information towards rare classes which is then used by the decision tree!
+Here you can see that k-means cluster is able to add information towards the rare class `guess_passwd` which is then used by the decision tree!
 
 
 # Weighted Decision Tree with 2 k-means clusters classes
 
-From results above it is clear that the vast majority of errors are from false predictions of normal trafffic for truly malicious traffic. This seems to be well distributed across all attack types. Can we use k-means with two clusters and hope that it is able to distinguish normal from non-normal traffic. Note: We planned for this to be done via k-NN so that we could be sure that we were creating clusters for normal and non-normal traffic, however, we had trouble getting the k-NN model to work in R.
+From the results above it is clear that the vast majority of errors are from false predictions of normal trafffic for truly malicious traffic. This seems to be well distributed across all attack types. This is probably due to over-weighting the rare classes.
+
+Here we use k-means with two clusters and hope that it is able to add distinguish normal from non-normal traffic. This could then be a signifier to the decision tree of their broader category, and hopefuly avoid this type of error.
+
+Note: We planned for this to be done via k-NN so that we could be sure that we were creating clusters for normal and non-normal traffic (i.e perform supervised learning) However, we had trouble getting the k-NN model to work (or maybe it took too long to run).
 
 
 ```{r eval=FALSE}
@@ -716,12 +744,13 @@ k_means_decision_tree_model <- readRDS(
 )
 ```
 
-
+Plot the confusin matrix:
 ```{r}
 k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
 ggsave('./figures/embedded-k-means-2-confusion-matrix.png', width=6, height=5)
 ```
 
+Summarise the errors:
 ```{r}
 k_means_decision_tree_confusion_matrix <-
     k_means_decision_tree_results$confusion_matrix(connection_events)
@@ -730,11 +759,13 @@ classification_errors <- get_classification_errors(k_means_decision_tree_confusi
 classification_errors[Frequency >= 10]
 ```
 
+How many errors did it make in total?
 ```{r}
 total_errors <- sum(classification_errors$Frequency)
 total_errors
 ```
 
+Plot the decision tree:
 ```{r}
 plot(k_means_decision_tree_model)
 text(k_means_decision_tree_model)
@@ -743,16 +774,18 @@ dev.copy(png,"./figures/embedded-k-means-2-tree.png", width=6, height=10)
 dev.off()
 ```
 
+And find out how important it considers each variable:
 ```{r}
 sort(k_means_decision_tree_model$variable.importance)
 ```
 
-Here you can see that k-means cluster has not been used. Maybe this is because of the greedy algorithm? Or perhaps, the 2-cluster k-means performs badly, and the deicion tree has determined that the feature does not provide sufficent information.
+Here you can see that the new `k_means_cluster` feature has not been used. This requires further analysis, but we suspect it is because 2-cluster k-means performs badly, and the decision tree has determined that the feature does not provide sufficent information to cause a split. This can be seen in the `variable_importance` above.
 
 
 # Random Forest on all features
 
-Apply the random forest to all features:
+A random forest is a bootstrap aggregated decision tree. This could work well with our data, and provides a comparison point for a different meta-learning strategy applied to deicison trees and our data set. Here we apply the random foret on all our features:
+
 ```{r eval=FALSE}
 confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 25 minutes
     training_indices <- -fold
@@ -784,7 +817,6 @@ summary_matrix = Reduce('+', confusion_matrices) # confusion_matrices[[1]] + con
 summary_matrix
 ```
 
-To avoid re-running this everytime, save a copy of the results into a file:
 ```{r, eval=FALSE, include=FALSE}
 saveRDS(
   summary_matrix,
@@ -792,7 +824,6 @@ saveRDS(
 )
 ```
 
-The load it with:
 ```{r, eval=TRUE, include=FALSE}
 summary_matrix <- readRDS(
   file='./data/daniel-jones-random-forest-summary-matrix-all-features.rds'
@@ -805,13 +836,17 @@ plot_log_confusion_matrix(summary_matrix)
 ggsave('./figures/random-forest-confusion-matrix.png', width=6, height=5)
 ```
 
+Summarise the errors:
 ```{r}
 classification_errors <- get_classification_errors(summary_matrix)
 classification_errors
 ```
 
+How many errors were there in total?
 ```{r}
 total_errors <- sum(classification_errors$Frequency)
 total_errors
 ```
+
+The random forest is the best performing model we've seen so far, decreasing the total number of errors by a factor of 100. Further, looking at the confusion matrix we can see that it increases performance in a way that does not exploit the unbalanced nature of the data set.
 
