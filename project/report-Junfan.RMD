@@ -665,7 +665,37 @@ For ipsweep, the performance still not ideal.
 
 ## Now this part, we will try the class weight for random forest
 Weight
+```{r}
 
+weights <-c()
+for(i in unique(connection_events$label)){
+  weights <- c(weights, length(connection_events$label)/length(which(connection_events$label==i)))
+}
+
+k_folds <- createFolds(connection_events$label, k=10)
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+model <- ranger(
+      label~.,
+      data=training_data,
+      class.weights = weights,
+      classification=TRUE,
+      importance='impurity'  # gini index
+  )
+
+predictions <- predict(model, data=connection_events)
+
+confusion_matrix <- table(originaldata$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+Some parts improved, like portweep, rootkit, etc. It seems like the results are similar to oversampled data.
 
 ## So let's look the data distribution in 2 dimensions.
 Visualization
@@ -674,10 +704,7 @@ This part needs a package named Rtsne
 ```{r}
 library(Rtsne)
 
-```
 
-
-```{r}
 sam <- sample(389255,40000)
 # is_dos is created by 4 type undersampling part
 is_dos$type <-NULL
@@ -821,10 +848,63 @@ for(i in sample){
 
 unique(sample)
 p2<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
-#legend(ts$Y, unique(sample), fill = NULL, col = colorslabel2)
 
 
 # try to add legend..
 plot(ts$Y,  main="tSNE","cex.main"=2, "cex.lab"=1.5)
 text(ts$Y, labels=connection_events$label[sam], col=colors[connection_events$label[sam]])
+```
+See the weekness part
+```{r}
+connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+
+samples <- createFolds(connection_events$label, k=100)
+
+training_indices = -samples[[1]]
+testing_indices = samples [[1]]
+
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+model <- rpart(
+    label~.,  # this data set only contains one-hot-encoded service columns
+    data=training_data,
+    parms=list(split='information'),
+    method='class',
+    control=list(control=list(minsplit=2))
+)
+
+predictions <- predict(model, testing_data, type='class')
+
+
+data <- predictions
+
+sam <- testing_indices
+
+connection_events$label[sam] <- as.factor(connection_events$label[sam])
+## for plotting
+colors = rainbow(length(unique(connection_events$label[sam])))
+names(colors) = unique(connection_events$label[sam])
+colorslabel<-c()
+for(i in connection_events$label[sam]){
+  colorslabel <- c(colorslabel,colors[name=i])
+}
+
+
+ts <- Rtsne(connection_events[sam,-42], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates=FALSE)
+# real label
+p1<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
+
+
+# plot prediction label
+sample <- data
+sample <- as.factor(sample)
+
+colorslabel2<-c()
+for(i in sample){
+  colorslabel2 <- c(colorslabel2,colors[name=i])
+}
+
+p2<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
+
 ```
