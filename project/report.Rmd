@@ -1249,8 +1249,6 @@ confusion_matrix
 As we can see the performance is not really good even for random forest. Now let's use SMOTE to create new data see if it is helpful.
 
 ```{r}
-library(ROSE)
-
 # final will be the final data after oversampling
 final=data.frame()
 for(i in unique(connection_events$label)){
@@ -1491,9 +1489,6 @@ So let's look the data distribution in 2 dimensions.
 
 This part needs a package named Rtsne
 ```{r}
-library(Rtsne)
-
-
 sam <- sample(389255,40000)
 # is_dos is created by 4 type undersampling part
 is_dos$type <-NULL
