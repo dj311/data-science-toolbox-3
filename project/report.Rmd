@@ -38,7 +38,7 @@ knitr::opts_chunk$set(echo=TRUE)
 ```{r load_data_set}
 load_data <- function() {
     columns <- read.table(
-        "./data/kddcup.names",
+        "../data/kddcup.names",
         sep=":",
         skip=1,  # the first column name are the labels, but those are at the end!
         as.is=T
@@ -46,7 +46,7 @@ load_data <- function() {
     column_names <- c(columns[,1], 'label')
 
     connection_events <- read.csv(
-        "./data/kddcup.data_10_percent.gz",
+        "../data/kddcup.data_10_percent.gz",
         col.names=column_names
     )
 
@@ -234,7 +234,7 @@ add_predictions <- function(data, folds, predictions, new_column_name) {
 The taffic labels are grouped by attack type, here we load this mapping in and generate the `attack_categories` data table:
 ```{r}
 attack_categories <- fread(
-    './data/training_attack_types',
+    '../data/training_attack_types',
     col.names=c('attack', 'category'),
     header=FALSE
 )
@@ -534,7 +534,7 @@ for(i in 1:5){
 model_5
 ```
 
-Here is the details of kmeans data. It doesn't make too much sence.
+# Here is the details of kmeans data. It doesn't make too much sence.
 
 ```{r}
 ksummary <- cbind(
@@ -546,6 +546,7 @@ ksummary <- cbind(
 )
 ksummary
 ```
+
 
 ## Finding 20 Clusters
 Here, we run k-means looking for categories, to find some features are new which may be really good for finding feature importance. This new data has been named `model_20`:
@@ -957,7 +958,7 @@ The random forest is the best performing model we've seen so far, decreasing the
 
 ## 23 labels
 ### Simple Sampling(23 attacks)
-Pre-process
+Data pre-process: 
 
 ```{r}
 sampledata <- connection_events
@@ -973,7 +974,7 @@ for(i in unique(sampledata$label)){
 }
 ```
 
-Sampling 20, 50, 100 rows respectively
+Sampling 20, 50, 100 rows for every large attacks respectively
 # Sampling 20 rows (with bad results)
 
 ```{r}
@@ -995,11 +996,14 @@ simplesampling <- function(connection_events, nsam, columnname="label"){
   sam <- data.frame()
   for(i in unique(connection_events[[columnname]])){
     name = paste0("is_",i)
-    print(name)
     name = get(name)
-    
+    if(columnname!="label"){
+      name$label <-NULL
+    }
+      
     if(nrow(name)>=nsam){
       index = sample(c(1:nrow(name)),size=nsam)
+      
       sam <- rbind(sam, name[index,1:42])
     }
     else{
@@ -1019,35 +1023,39 @@ str2integer <- function(connection_events) {
 }
 ```
 
+Check the performance in random forest: test all the KDD_data_10_percent
+
+rows number = 20 (AUC = 0.9747116)
+
 ```{r}
 nsam = 20
 # sam: sampling data 
 sam <- simplesampling(connection_events, nsam)
 # sampling variable for training in decision tree and random forests
 confusion_matrix <- randomforest(sam, connection_events[,1:42],"label")
-
+confusion_matrix
 ```
 
-## Check the performance in random forest: test all the KDD_data_10_percent
 
-# Sampling 50 rows (with bad results)
+rows number = 50 (AUC = 0.9926582)
 
 ```{r}
 nsam = 50
 sam <- simplesampling(connection_events, nsam)
 confusion_matrix <- randomforest(sam, connection_events[,1:42])
+confusion_matrix
 ```
 
-# Sampling 100 rows
-```{r}
+rows number = 100 (AUC = 0.9905449)
 
+```{r}
 nsam = 100
 sam <- simplesampling(connection_events, nsam)
 confusion_matrix <- randomforest(sam, connection_events[,1:42])
+confusion_matrix
 ```
 
-2.K-means
-
+2.K-means undersampling
 
 ```{r}
 # ktable: K-means sampling data
@@ -1085,14 +1093,15 @@ ktable <- function(data, nclass, nsam=494020, columnname="label"){
 
 
 ### K-Means(23 attacks)
+In general, K means undersampling seems to be a bad choice for tree models.
 
-select 20 centers for data has a big size
+select 20 centers for attacks have big size
 ```{r}
 data <- str2integer(connection_events)
 
 nclass = 20
 
-results <- ktable(data, nclass)
+results <- ktable(data, nclass)  # about 3 mins
 
 confusion_matrix<-randomforest(results[[1]],results[[2]])
 
@@ -1113,9 +1122,9 @@ confusion_matrix<-training_undersampling(results)
 
 
 # Undersampling
-## 4 labels
+## 4 attack types
 
-4 types
+Data pre-process
 ```{r add features with types}
 type <- read.table(
   "http://kdd.ics.uci.edu/databases/kddcup99/training_attack_types",
@@ -1139,37 +1148,22 @@ connection_events$label <- NULL
 ```
 ### Simple Sampling
 
-```{r}
-randomforest_type <- function(training_data, testing_data){
-      
-    model <- ranger(type~., data=training_data, classification=TRUE)
-    predictions <- predict(model, data=testing_data)
-    
-    confusion_matrix <- table(testing_data$label, predictions$predictions)
-    
-    #print accuracy
-    print(sum(diag(confusion_matrix))/sum(confusion_matrix))
-    
-    return(confusion_matrix)
-
-}
-
-```
-Sampling 20 rows with bad results
+Sampling 20 rows (0.9866301)
 
 ```{r}
 nsam = 20
+rm(sam)
 sam <- simplesampling(connection_events, nsam, columnname = "type")
 confusion_matrix<-randomforest(sam, connection_events, columnname = "type")
 ```
-Sampling 50 rows 
+Sampling 50 rows (0.9870147)
 
 ```{r}
 nsam = 50
 sam <- simplesampling(connection_events, nsam, columnname = "type")
 confusion_matrix <- randomforest(sam, connection_events[,1:42],columnname = "type")
 ```
-Sampling 100 rows 
+Sampling 100 rows (0.9875066)
 
 ```{r}
 nsam = 100
@@ -1178,7 +1172,7 @@ confusion_matrix <- randomforest(sam, connection_events[,1:42],columnname = "typ
 ```
 ### K-Means: 4 types
 
-20
+20 centers
 ```{r}
 
 data <- str2integer(connection_events)
@@ -1190,7 +1184,7 @@ results <- ktable(data, nclass, columnname = "type")
 confusion_matrix<-randomforest(results[[1]],results[[2]],columnname = "type")
 
 ```
-50
+50 centers
 ```{r}
 
 data <- str2integer(connection_events)
@@ -1202,7 +1196,7 @@ results <- ktable(data, nclass, columnname = "type",columnname = "type")
 confusion_matrix<-randomforest(results[[1]],results[[2]])
 
 ```
-100
+100 centers
 ```{r}
 
 data <- str2integer(connection_events)
@@ -1217,7 +1211,7 @@ confusion_matrix<-randomforest(results[[1]],results[[2]],columnname = "type")
 The performance of k-means undersampling is terrible!
 
 # Oversampling
-### Add data from whole data
+## Add data from whole data
   
 The performance of the prediction of probe attacks is the worst one, so we try to find a solution this time. 
 ```{r}
