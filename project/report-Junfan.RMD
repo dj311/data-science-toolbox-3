@@ -1,0 +1,122 @@
+```{r setup, include=FALSE}
+library(caret)
+library(data.table)
+library(e1071)
+library(ggplot2)
+library(ranger)
+library(knitr)
+library(rpart)
+library(parallel)
+library(magrittr)
+library(dplyr)
+library(BBmisc)
+
+set.seed(0xC0FFEE)
+
+knitr::opts_knit$set(root.dir='../')
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+# Setup
+
+Load in the data set:
+```{r}
+columns <- read.table(
+    "./data/kddcup.names",
+    sep=":",
+    skip=1,  # the first column name are the labels, but those are at the end!
+    as.is=T
+)
+column_names <- c(columns[,1], 'label')
+
+connection_events <- read.csv(
+    "./data/kddcup.data_10_percent.gz",
+    col.names=column_names
+)
+
+setDT(connection_events)  # convert from data.frame to data.table
+```
+
+
+# K-Fold Validation
+
+```{r}
+k_folds <- createFolds(connection_events$label, k=10)
+```
+
+This generates 10 sets of indices on the data. These are arranged such that similar amounts of each label are in each set.
+
+To use them for k-fold cross-validation:
+
+  1. Pick each fold one at a time.
+  2. Treat this as the indices of the testing set.
+  3. Select all other connection events as the training set.
+  4. Train your model and get your predictions from the test set.
+
+Example below with random forests.
+
+
+- Kmeans - 5 - 20 (normalization part)
+
+
+```{r}
+connection_events$protocol_type <- as.integer(factor(connection_events$protocol_type))
+connection_events$service <- as.integer(factor(connection_events$service))
+connection_events$flag <- as.integer(factor(connection_events$flag))
+kmeansdata <- connection_events[,1:41]
+kmeansdata <- normalize(kmeansdata, method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
+```
+
+# TODO set.seed should be deleted
+```{r}
+set.seed(20)
+Cluster <- kmeans(kmeansdata, 5, nstart = 20)
+```
+
+## K-means: 20 catogries, - new data named as model_5
+## Add new features or new columns namely is_kmeans_1, is_kmeans_2, ..., is_kmeans_5 and creating new variables named kmeans_1, kmeans_2, ..., kmeans_5
+
+```{r}
+model_5 <- connection_events
+
+for(i in 1:5){
+  name = paste0("is_kmeans",i)
+  model_5[[name]]<- as.integer(Cluster$`cluster`==i)
+}
+
+for(i in 1:5){
+  variablename = paste("kmeans", i, sep = "_")
+  columnname = paste("is_kmeans", i, sep = "_")
+  assign(variablename, model_5[model_5$columnname==1])
+}
+model_5
+```
+
+## TODO: describe what we get from the is_kmeans_1, .., is_kmeans_5 
+
+## K-means: 20 catogries (to find some features are new which may be really good for finging features inportance) - new data named model_20
+
+```{r}
+set.seed(20)
+Cluster1 <- kmeans(kmeansdata, 20, nstart = 20)
+```
+
+## Add new features
+
+```{r}
+model_20 <- connection_events[,c(1:42)]
+for(i in 1:20){
+  name = paste0("is_kmeans_20_",i)
+  model_20[[name]]<- as.integer(Cluster1$`cluster`==i)
+}
+saveRDS(summary_matrix, file='../data/Kmeans-20-features.rds')
+```
+
+
+# Could be as a training data
+
+```{r}
+model20 <- model_20[,c(42:62)]
+k_folds <- createFolds(model_20$label, k=10)
+```
+
