@@ -479,10 +479,75 @@ total_errors
 
 
 # K-Means
-## Finding 5 Clusters by Attack Categories
-## Finding 20 Clusters by Attack Type
 
-(normalization part)
+Get the data ready for k-means: since it uses a distance metric all categorical variables need to be encoded as numbers. The data set is then normalized.
+
+```{r}
+connection_events$protocol_type <- as.integer(factor(connection_events$protocol_type))
+connection_events$service <- as.integer(factor(connection_events$service))
+connection_events$flag <- as.integer(factor(connection_events$flag))
+kmeansdata <- connection_events[,1:41]
+kmeansdata <- normalize(kmeansdata, method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
+```
+
+## Finding 5 Clusters
+There are 5 main categories of traffic:
+  1. DOS attacks
+  2. Probing attacks
+  4. Priviledge escalation (U2R) attacks
+  4. Remote login (R2L) attacks
+  5. Non-malicious (normal) traffic
+
+We hope that using k-means with 5 clusters will identify these different types of traffic.
+
+```{r}
+Cluster <- kmeans(kmeansdata, 5, nstart = 20)
+```
+
+Add new features or new columns namely: is_kmeans_1, is_kmeans_2, ..., is_kmeans_5 and creating new variables named: kmeans_1, kmeans_2, ..., kmeans_5.
+
+```{r}
+model_5 <- connection_events
+
+for(i in 1:5){
+  name = paste0("is_kmeans",i)
+  model_5[[name]]<- as.integer(Cluster$`cluster`==i)
+}
+
+for(i in 1:5){
+  variablename = paste("kmeans", i, sep = "_")
+  columnname = paste("is_kmeans", i, sep = "_")
+  assign(variablename, model_5[model_5$columnname==1])
+}
+
+model_5
+```
+
+
+## Finding 20 Clusters by Attack Type
+Here, we run k-means looking for categories, to find some features are new which may be really good for finding feature importance. This new data has been named `model_20`:
+
+```{r}
+Cluster1 <- kmeans(kmeansdata, 20, nstart = 20)
+```
+
+Add new features:
+```{r}
+model_20 <- connection_events[,c(1:42)]
+for(i in 1:20){
+  name = paste0("is_kmeans_20_",i)
+  model_20[[name]]<- as.integer(Cluster1$`cluster`==i)
+}
+saveRDS(summary_matrix, file='../data/Kmeans-20-features.rds')
+```
+
+
+Could be as a training data
+
+```{r}
+model20 <- model_20[,c(42:62)]
+k_folds <- createFolds(model_20$label, k=10)
+```
 
 # Embedding 5 cluster k-means in a Decision Tree
 
