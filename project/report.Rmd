@@ -939,19 +939,761 @@ total_errors
 The random forest is the best performing model we've seen so far, decreasing the total number of errors by a factor of 100. Further, looking at the confusion matrix we can see that it increases performance in a way that does not overly rely on  the unbalanced nature of the data set (as our baseline model, the decision tree has).
 
 
-# Undersamping
+
+
+# Undersamping: to solve imbalanced issue
+
 ## 23 labels
-### Simple Sampling
-### K-Means
+### Simple Sampling(23 attacks)
+Pre-process
+
+```{r}
+sampledata <- connection_events
+for(i in unique(sampledata$label)){
+  name = paste0("is_",i)
+  sampledata[[name]] <- ((sampledata$label == i)+0)
+}
+# 23 new variables used for sampling
+for(i in unique(sampledata$label)){
+  name = paste0("is_",i)
+  columnname = paste0("is_",i)
+  assign(name, sampledata[sampledata[[columnname]]==1])
+}
+```
+
+Sampling 20, 50, 100 rows respectively
+# Sampling 20 rows (with bad results)
+
+```{r}
+randomforest <- function(training_data, testing_data, columnname="label"){
+      
+    eval(parse(text=paste0("model <- ranger(",columnname, "~., data=training_data, classification=TRUE)")))
+    predictions <- predict(model, data=testing_data)
+    
+    confusion_matrix <- table(testing_data[[columnname]], predictions$predictions)
+    
+    #print accuracy
+    print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+    
+    return(confusion_matrix)
+
+}
+
+simplesampling <- function(connection_events, nsam, columnname="label"){
+  sam <- data.frame()
+  for(i in unique(connection_events[[columnname]])){
+    name = paste0("is_",i)
+    print(name)
+    name = get(name)
+    
+    if(nrow(name)>=nsam){
+      index = sample(c(1:nrow(name)),size=nsam)
+      sam <- rbind(sam, name[index,1:42])
+    }
+    else{
+      index = sample(c(1:nrow(name)),size=nrow(name))
+      sam <- rbind(sam, name[index,1:42])
+    }
+  }
+  return(sam)
+}
+
+
+str2integer <- function(connection_events) {
+    connection_events$protocol_type <- as.integer(factor(connection_events$protocol_type))
+    connection_events$service <- as.integer(factor(connection_events$service))
+    connection_events$flag <- as.integer(factor(connection_events$flag))
+    return(connection_events)
+}
+```
+
+```{r}
+nsam = 20
+# sam: sampling data 
+sam <- simplesampling(connection_events, nsam)
+# sampling variable for training in decision tree and random forests
+confusion_matrix <- randomforest(sam, connection_events[,1:42],"label")
+
+```
+
+## Check the performance in random forest: test all the KDD_data_10_percent
+
+# Sampling 50 rows (with bad results)
+
+```{r}
+nsam = 50
+sam <- simplesampling(connection_events, nsam)
+confusion_matrix <- randomforest(sam, connection_events[,1:42])
+```
+
+# Sampling 100 rows
+```{r}
+
+nsam = 100
+sam <- simplesampling(connection_events, nsam)
+confusion_matrix <- randomforest(sam, connection_events[,1:42])
+```
+
+2.K-means
+
+
+```{r}
+# ktable: K-means sampling data
+ktable <- function(data, nclass, nsam=494020, columnname="label"){
+    data[,1:41] <- normalize(
+        data[,1:41], 
+        method = "standardize", 
+        range = c(0, 1), 
+        margin = 1L, 
+        on.constant = "quiet"
+    )
+    index = sample(c(1:nrow(data)),size=nsam)
+    sample_events <- data[index,1:42]
+    ktable <- data.frame()
+    for(i in unique(data[[columnname]])){
+      kmeansdata <- sample_events[which(sample_events[,42]==i),1:41]
+      s <- sample_events[which(sample_events[,42]==i),1:42]
+      # It's no meaning to do kmeans for data with tiny size
+      if(nrow(s)>nclass+100){
+        #Kmeans
+        Cluster <- kmeans(kmeansdata, nclass, nstart = 20)
+        centers <- Cluster$centers
+        eval(parse(text=paste0('centers <- cbind(centers,', columnname, '=rep(i, nclass))')))
+        ktable <- rbind(ktable, centers)
+      }
+      else{
+        #Kmeans
+        ktable <- rbind(ktable, s)
+      }
+      
+    }
+    return(list(ktable,data))
+}
+```
+
+
+### K-Means(23 attacks)
+
+select 20 centers for data has a big size
+```{r}
+data <- str2integer(connection_events)
+
+nclass = 20
+
+results <- ktable(data, nclass)
+
+confusion_matrix<-randomforest(results[[1]],results[[2]])
+
+```
+
+select 50 centers
+```{r}
+nclass = 50
+results <- ktable(data, nclass)
+confusion_matrix<-training_undersampling(results)
+```
+select 100 centers
+```{r}
+nclass = 100
+results <- ktable(data, nclass)
+confusion_matrix<-training_undersampling(results)
+```
+
+
+# Undersampling
 ## 4 labels
+
+4 types
+```{r add features with types}
+type <- read.table(
+  "http://kdd.ics.uci.edu/databases/kddcup99/training_attack_types",
+  sep=" ",
+  skip=1,
+  as.is=T
+)
+setDT(type)  # convert from data.frame to data.table
+
+for(i in 1:length(type[[1]])){
+  name = paste0(type[[1]][i],".")
+  connection_events$type[which(connection_events$label == name)]<-type[[2]][i]
+}
+connection_events$type[which(is.na(connection_events$type))]<-"normal"
+for(i in unique(connection_events$type)){
+  name <- paste0("is_",i)
+  assign(name, connection_events[which(connection_events$type==i)])
+}
+connection_events$label <- NULL
+
+```
 ### Simple Sampling
-### K-Means
+
+```{r}
+randomforest_type <- function(training_data, testing_data){
+      
+    model <- ranger(type~., data=training_data, classification=TRUE)
+    predictions <- predict(model, data=testing_data)
+    
+    confusion_matrix <- table(testing_data$label, predictions$predictions)
+    
+    #print accuracy
+    print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+    
+    return(confusion_matrix)
+
+}
+
+```
+Sampling 20 rows with bad results
+
+```{r}
+nsam = 20
+sam <- simplesampling(connection_events, nsam, columnname = "type")
+confusion_matrix<-randomforest(sam, connection_events, columnname = "type")
+```
+Sampling 50 rows 
+
+```{r}
+nsam = 50
+sam <- simplesampling(connection_events, nsam, columnname = "type")
+confusion_matrix <- randomforest(sam, connection_events[,1:42],columnname = "type")
+```
+Sampling 100 rows 
+
+```{r}
+nsam = 100
+sam <- simplesampling(connection_events, nsam, columnname = "type")
+confusion_matrix <- randomforest(sam, connection_events[,1:42],columnname = "type")
+```
+### K-Means: 4 types
+
+20
+```{r}
+
+data <- str2integer(connection_events)
+
+nclass = 20
+
+results <- ktable(data, nclass, columnname = "type")
+
+confusion_matrix<-randomforest(results[[1]],results[[2]],columnname = "type")
+
+```
+50
+```{r}
+
+data <- str2integer(connection_events)
+
+nclass = 50
+
+results <- ktable(data, nclass, columnname = "type",columnname = "type")
+
+confusion_matrix<-randomforest(results[[1]],results[[2]])
+
+```
+100
+```{r}
+
+data <- str2integer(connection_events)
+
+nclass = 100
+
+results <- ktable(data, nclass, columnname = "type")
+
+confusion_matrix<-randomforest(results[[1]],results[[2]],columnname = "type")
+
+```
+The performance of k-means undersampling is terrible!
 
 # Oversampling
 ### Add data from whole data
+  
+The performance of the prediction of probe attacks is the worst one, so we try to find a solution this time. 
+```{r}
+# We only selected probe attacks from whole kdd dataset and kept others connection events. As the process took a long time and might kill computer, we recommond use readRDS to read data we generated.
+# Original data from: http://kdd.ics.uci.edu/databases/kddcup99/kddcup.data.gz
+connection_events <- readRDS(file='./data/resampling_events(add_probe).rds')
+connection_events$type=NULL
+```
+
+
+```{r}
+k_folds <- createFolds(connection_events$label, k=10)
+```
+
+
+```{r}
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+confusion_matrix <- randomforest(training_data,testing_data,columnname="label")
+```
 ### Create data by SMOTE
 
+```{r}
+# since some data with 100% accuracy, in order to run faster and improve others performance we selected the data with lower accuracy.
+connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+
+# See their performance
+k_folds <- createFolds(connection_events$label, k=10)
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+confusion_matrix <- randomforest(training_data,testing_data,columnname="label")
+confusion_matrix
+```
+
+As we can see the performance is not really good even for random forest. Now let's use SMOTE to create new data see if it is helpful.
+
+```{r}
+library(ROSE)
+
+# final will be the final data after oversampling
+final=data.frame()
+for(i in unique(connection_events$label)){
+  if(i=="normal."){
+    temp <- connection_events
+    temp2 <- temp[which(temp$label=="normal."),]
+    final=rbind(final,temp2)
+  }
+  else{
+    name = paste0("resample_",i)
+    temp <- connection_events %>% 
+      filter(connection_events$label == "normal." | connection_events$label == i)
+    # N = 194554 then all the data sets have the same size
+    temp <- ovun.sample(label ~ ., data = temp, method="over", N=194554)$data
+    temp2 <- temp[which(temp$label!="normal."),]
+    assign(name,temp) 
+    final=rbind(final,temp2)
+  }
+}
+connection_events=final
+```
+See the performance for the created data.
+```{r}
+# See their performance
+k_folds <- createFolds(connection_events$label, k=10)
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+model <- ranger(
+    label~.,
+    data=training_data,
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+
+For the original data
+```{r}
+originaldata <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+
+predictions <- predict(model, data=originaldata)
+
+confusion_matrix <- table(originaldata$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+```
+How about create a smaller one
+```{r}
+connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+final=data.frame()
+for(i in unique(connection_events$label)){
+  if(i=="normal."){
+    temp <- connection_events
+    temp2 <- temp[which(temp$label=="normal."),]
+    final=rbind(final,temp2)
+  }
+  else{
+    name = paste0("resample_",i)
+    temp <-connection_events %>% 
+      filter(connection_events$label == "normal." | connection_events$label == i)
+    temp <- ovun.sample(label ~ ., data = temp, method="over", N=114554)$data
+    temp2 <- temp[which(temp$label!="normal."),]
+    assign(name,temp)
+    final=rbind(final,temp2)
+  }
+}
+connection_events <- final
+
+# update levels
+
+connection_events$label<-factor(connection_events$label)
+```
+
+Performance
+```{r}
+k_folds <- createFolds(connection_events$label, k=10)
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+model <- ranger(
+    label~.,
+    data=training_data,
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+
+For the original data
+```{r}
+predictions <- predict(model, data=originaldata)
+
+confusion_matrix <- table(originaldata$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+```
+
+If we compared with the ipsweep, we would find that the errors on ipsweep and nmap disappeared. Also, the performance of predicting ftp_write, multihop, portsweep, etc. increased.(it is worth to create new data for them). However, the ipsweep showed no improvement.
+
+# Oversampling with both real data(the probe attacks from full dataset) and new data with smaller size(created by SMOTE)
+```{r}
+connection_events <- readRDS(file='./data/resampling_events(add_probe).rds')
+connection_events$type=NULL
+# the variable `connection_events1` is used in for{else if{->connection_events1<-}}
+connection_events1=connection_events
+
+connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+final=data.frame()
+for(i in unique(connection_events$label)){
+  if(i=="normal."){
+    temp <- connection_events
+    temp2 <- temp[which(temp$label=="normal."),]
+    final=rbind(final,temp2)
+  }
+  else if(length(which(connection_events1$label== i))>=10000&&length(which(connection_events1$label== i))<=20000){
+    temp <- connection_events1
+    temp2 <- temp[which(temp$label=="normal."),]
+    final=rbind(final,temp)
+  }
+  else{
+    name = paste0("resample_",i)
+    temp <-connection_events %>% 
+      filter(connection_events$label == "normal." | connection_events$label == i)
+    temp <- ovun.sample(label ~ ., data = temp, method="over", N=114554)$data
+    temp2 <- temp[which(temp$label!="normal."),]
+    assign(name,temp)
+    final=rbind(final,temp2)
+  }
+}
+connection_events <- final
+
+# update levels
+
+connection_events$label<-factor(connection_events$label)
+```
+
+See the performance
+
+```{r}
+# See their performance
+k_folds <- createFolds(connection_events$label, k=10)
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+model <- ranger(
+    label~.,
+    data=training_data,
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+
+
+```{r}
+predictions <- predict(model, data=originaldata)
+
+confusion_matrix <- table(originaldata$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+For ipsweep, the performance still not ideal.
+
+
+### Weight
+Now this part, we will try to change the class weights for random forest and see if the porformance will improve.
+
+```
+weights <-c()
+for(i in unique(connection_events$label)){
+  weights <- c(weights, length(connection_events$label)/length(which(connection_events$label==i)))
+}
+
+k_folds <- createFolds(connection_events$label, k=10)
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+model <- ranger(
+      label~.,
+      data=training_data,
+      class.weights = weights,
+      classification=TRUE,
+      importance='impurity'  # gini index
+  )
+
+predictions <- predict(model, data=connection_events)
+
+confusion_matrix <- table(originaldata$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+Some parts improved, like portweep, rootkit, etc. It seems like the results are similar to oversampled data.
+
+
 # Visualization
+So let's look the data distribution in 2 dimensions.
 ### DOS attacks
+
+This part needs a package named Rtsne
+```{r}
+library(Rtsne)
+
+
+sam <- sample(389255,40000)
+# is_dos is created by 4 type undersampling part
+is_dos$type <-NULL
+is_dos$label<- factor(is_dos$label)
+sample <- is_dos[sam]$label
+
+sample<-factor(sample)
+## for plotting
+colors = rainbow(length(unique(sample)))
+names(colors) = levels(sample)
+colors
+colorslabel<-c()
+for(i in sample){
+  colorslabel <- c(colorslabel,colors[name=i])
+}
+
+ts <- Rtsne(is_dos[sam,-42], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates=FALSE)
+
+
+plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
+
+```
+
 ### Decision Tree
+Run tsne on a random, stratified sample of 1% of the data:
+```{r}
+connection_events <- load_data()
+# to increase the speed on tsne, k=100
+
+samples <- createFolds(connection_events$label, k=100)
+
+training_indices = -samples[[1]]
+testing_indices = samples [[1]]
+
+training_data <- connections[training_indices]
+testing_data <- connections[testing_indices]
+
+model <- rpart(
+    label~.,  # this data set only contains one-hot-encoded service columns
+    data=training_data,
+    parms=list(split='information'),
+    method='class',
+    control=list(control=list(minsplit=2))
+)
+
+predictions <- predict(model, testing_data, type='class')
+
+```
+
+```{r}
+data <- predictions
+
+sam <- testing_indices
+
+connection_events$label[sam] <- as.factor(connection_events$label[sam])
+## for plotting
+colors = rainbow(length(unique(connection_events$label[sam])))
+names(colors) = unique(connection_events$label[sam])
+colorslabel<-c()
+for(i in connection_events$label[sam]){
+  colorslabel <- c(colorslabel,colors[name=i])
+}
+
+
+ts <- Rtsne(connection_events[sam,-42], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates=FALSE)
+# real label
+p1<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
+
+
+# plot prediction label
+sample <- data
+sample <- as.factor(sample)
+
+colorslabel2<-c()
+for(i in sample){
+  colorslabel2 <- c(colorslabel2,colors[name=i])
+}
+
+unique(sample)
+p2<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
+#legend(ts$Y, unique(sample), fill = NULL, col = colorslabel2)
+
+
+# try to add legend..
+plot(ts$Y,  main="tSNE","cex.main"=2, "cex.lab"=1.5)
+text(ts$Y, labels=connection_events$label[sam], col=colors[connection_events$label[sam]])
+
+
+pdf("comparison_real_predicted.pdf",width=7,height=4)
+par(mfrow=c(1,2))
+plot(ts$Y, pch=16, cex=.3, main="True",xaxt='n', yaxt='n', col.lab="white", col=colorslabel)
+plot(ts$Y, pch=16, cex=.3, main="Predicted",xaxt='n', yaxt='n', col.lab="white", col=colorslabel2)
+dev.off()
+
+```
+
 ### Random forest
+  
+```{r}
+
+model_rf <- ranger(
+    label~.,
+    data=training_data,
+    ## automatically selected since the 'label' column is a factor, but
+    ## leave this here for clarity:
+    classification=TRUE
+)
+predictions <- predict(model_rf, data=testing_data)
+
+
+```
+
+```{r include=FALSE, eval=TRUE}
+data <- predictions$predictions
+
+sam <- testing_indices
+
+connection_events$label[sam] <- as.factor(connection_events$label[sam])
+## for plotting
+colors = rainbow(length(unique(connection_events$label[sam])))
+names(colors) = unique(connection_events$label[sam])
+colorslabel<-c()
+for(i in connection_events$label[sam]){
+  colorslabel <- c(colorslabel,colors[name=i])
+}
+
+
+ts <- Rtsne(connection_events[sam,-42], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates=FALSE)
+# real label
+p1<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
+
+
+# plot prediction label
+sample <- data
+sample <- as.factor(sample)
+
+colorslabel2<-c()
+for(i in sample){
+  colorslabel2 <- c(colorslabel2,colors[name=i])
+}
+
+unique(sample)
+p2<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
+
+
+# try to add legend..
+plot(ts$Y,  main="tSNE","cex.main"=2, "cex.lab"=1.5)
+text(ts$Y, labels=connection_events$label[sam], col=colors[connection_events$label[sam]])
+```
+See the weekness part
+```{r}
+connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+
+samples <- createFolds(connection_events$label, k=100)
+
+training_indices = -samples[[1]]
+testing_indices = samples [[1]]
+
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+model <- rpart(
+    label~.,  # this data set only contains one-hot-encoded service columns
+    data=training_data,
+    parms=list(split='information'),
+    method='class',
+    control=list(control=list(minsplit=2))
+)
+
+predictions <- predict(model, testing_data, type='class')
+
+
+data <- predictions
+
+sam <- testing_indices
+
+connection_events$label[sam] <- as.factor(connection_events$label[sam])
+## for plotting
+colors = rainbow(length(unique(connection_events$label[sam])))
+names(colors) = unique(connection_events$label[sam])
+colorslabel<-c()
+for(i in connection_events$label[sam]){
+  colorslabel <- c(colorslabel,colors[name=i])
+}
+
+
+ts <- Rtsne(connection_events[sam,-42], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates=FALSE)
+# real label
+p1<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
+
+
+# plot prediction label
+sample <- data
+sample <- as.factor(sample)
+
+colorslabel2<-c()
+for(i in sample){
+  colorslabel2 <- c(colorslabel2,colors[name=i])
+}
+
+p2<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
+
+```
