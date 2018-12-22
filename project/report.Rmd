@@ -535,7 +535,7 @@ model_5
 ```
 
 
-## Finding 20 Clusters by Attack Type
+## Finding 20 Clusters
 Here, we run k-means looking for categories, to find some features are new which may be really good for finding feature importance. This new data has been named `model_20`:
 
 ```{r}
@@ -554,7 +554,7 @@ saveRDS(summary_matrix, file='./data/Kmeans-20-features.rds')
 ```
 
 
-Could be as a training data
+Could be used as training data:
 
 ```{r}
 model20 <- model_20[,c(42:62)]
@@ -588,12 +588,10 @@ transform_data_for_k_means <- function(data) {
     return(data)
 }
 
-get_clusters <- function(data) {
+get_clusters <- function(data, num_clusters) {
     kmeansdata <- transform_data_for_k_means(data)
 
-    # K-means: 5 catogries (Trying to devided the attacks type into
-    # 4 automatically)
-    Cluster <- kmeans(kmeansdata, 5, nstart = 20)
+    Cluster <- kmeans(kmeansdata, num_clusters, nstart = 20)
 
     rm(kmeansdata)
     gc()
@@ -631,7 +629,7 @@ fold_predictions <- lapply(k_folds, function(fold) {
         return(weight)
     })
 
-    training_data$k_means_cluster <- get_clusters(training_data)
+    training_data$k_means_cluster <- get_clusters(training_data, 5)
     gc()
 
     model <- rpart(
@@ -643,7 +641,7 @@ fold_predictions <- lapply(k_folds, function(fold) {
         weights=training_weights
     )
 
-    testing_data$k_means_cluster <- get_clusters(testing_data)
+    testing_data$k_means_cluster <- get_clusters(testing_data, 5)
     predictions <- predict(model, testing_data, type='class')
 
     rm(training_data)
@@ -665,7 +663,7 @@ weights <- sapply(connections$label, function(connection_label) {
     return(weight)
 })
 
-connections$k_means_cluster <- get_clusters(connections)
+connections$k_means_cluster <- get_clusters(connections, 5)
 k_means_decision_tree_model <- rpart(
     label~.,
     data=connections,
@@ -702,7 +700,7 @@ k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
 ggsave('./figures/embedded-k-means-5-confusion-matrix.png', width=6, height=5)
 ```
 
-Summatrise the errors:
+Summarise the errors:
 ```{r}
 k_means_decision_tree_confusion_matrix <-
     k_means_decision_tree_results$confusion_matrix(connection_events)
@@ -731,7 +729,7 @@ dev.off()
 sort(k_means_decision_tree_model$variable.importance)
 ```
 
-Here you can see that k-means cluster is able to add information towards the rare class `guess_passwd` which is then used by the decision tree!
+Looking at the plot, you can see that k-means cluster is able to add information towards the rare class `guess_passwd` which is then used by the decision tree!
 
 
 # Embedding 2 cluster k-means in a Decision Tree
@@ -753,6 +751,7 @@ Note: We planned for this to be done via k-NN so that we could be sure that we w
 connections <- decision_tree_transform(connection_events)
 
 fold_predictions <- lapply(k_folds, function(fold) {
+    print("start")
     gc()
 
     training_indices <- -fold
@@ -873,10 +872,10 @@ Here you can see that the new `k_means_cluster` feature has not been used. This 
 
 # Random Forest
 
-A random forest is a bootstrap aggregated decision tree. This could work well with our data, and provides a comparison point for a different meta-learning strategy applied to deicison trees and our data set. Here we apply the random foret on all our features:
+A random forest is a bootstrap aggregated decision tree. This could work well with our data, and provides a comparison point for a different meta-learning strategy applied to deicison trees and our data set. Here we apply the random forest on all our features:
 
 ```{r eval=FALSE}
-confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 25 minutes
+confusion_matrices <- lapply(k_folds, function(fold) {  # approx. 25 minutes
     training_indices <- -fold
     testing_indices <- fold
 
@@ -937,7 +936,7 @@ total_errors <- sum(classification_errors$Frequency)
 total_errors
 ```
 
-The random forest is the best performing model we've seen so far, decreasing the total number of errors by a factor of 100. Further, looking at the confusion matrix we can see that it increases performance in a way that does not exploit the unbalanced nature of the data set.
+The random forest is the best performing model we've seen so far, decreasing the total number of errors by a factor of 100. Further, looking at the confusion matrix we can see that it increases performance in a way that does not overly rely on  the unbalanced nature of the data set (as our baseline model, the decision tree has).
 
 
 # Undersamping
