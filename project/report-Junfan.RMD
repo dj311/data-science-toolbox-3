@@ -38,7 +38,23 @@ setDT(connection_events)  # convert from data.frame to data.table
 
 ```
 
-
+```{r load_data_set}
+load_data <- function() {
+    columns <- read.table(
+        "./data/kddcup.names",
+        sep=":",
+        skip=1,  # the first column name are the labels, but those are at the end!
+        as.is=T
+    )
+    column_names <- c(columns[,1], 'label')
+    connection_events <- read.csv(
+        "./data/kddcup.data_10_percent.gz",
+        col.names=column_names
+    )
+    setDT(connection_events)  # convert from data.frame to data.table
+    return(connection_events)
+}
+```
 # K-Fold Validation
 
 ```{r}
@@ -686,9 +702,11 @@ plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
 ```
 
 --- decision tree
-
+Run tsne on a random, stratified sample of 1% of the data:
 ```{r}
-#connection_events <- load()
+connection_events <- load_data()
+# to increase the speed on tsne, k=100
+
 samples <- createFolds(connection_events$label, k=100)
 
 training_indices = -samples[[1]]
@@ -723,13 +741,13 @@ for(i in connection_events$label[sam]){
   colorslabel <- c(colorslabel,colors[name=i])
 }
 
-# Rtne process got two dimensions in ts and saved in ts$data
+
 ts <- Rtsne(connection_events[sam,-42], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates=FALSE)
 # real label
-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
+p1<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
 
 
-# plot predicted label
+# plot prediction label
 sample <- data
 sample <- as.factor(sample)
 
@@ -739,7 +757,70 @@ for(i in sample){
 }
 
 unique(sample)
-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
+p2<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
+#legend(ts$Y, unique(sample), fill = NULL, col = colorslabel2)
+
+
+# try to add legend..
+plot(ts$Y,  main="tSNE","cex.main"=2, "cex.lab"=1.5)
+text(ts$Y, labels=connection_events$label[sam], col=colors[connection_events$label[sam]])
+
+
+pdf("comparison_real_predicted.pdf",width=7,height=4)
+par(mfrow=c(1,2))
+plot(ts$Y, pch=16, cex=.3, main="True",xaxt='n', yaxt='n', col.lab="white", col=colorslabel)
+plot(ts$Y, pch=16, cex=.3, main="Predicted",xaxt='n', yaxt='n', col.lab="white", col=colorslabel2)
+dev.off()
+
+```
+
+--- random forest
+  
+```{r}
+
+model_rf <- ranger(
+    label~.,
+    data=training_data,
+    ## automatically selected since the 'label' column is a factor, but
+    ## leave this here for clarity:
+    classification=TRUE
+)
+predictions <- predict(model_rf, data=testing_data)
+
+
+```
+
+```{r include=FALSE, eval=TRUE}
+data <- predictions$predictions
+
+sam <- testing_indices
+
+connection_events$label[sam] <- as.factor(connection_events$label[sam])
+## for plotting
+colors = rainbow(length(unique(connection_events$label[sam])))
+names(colors) = unique(connection_events$label[sam])
+colorslabel<-c()
+for(i in connection_events$label[sam]){
+  colorslabel <- c(colorslabel,colors[name=i])
+}
+
+
+ts <- Rtsne(connection_events[sam,-42], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates=FALSE)
+# real label
+p1<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
+
+
+# plot prediction label
+sample <- data
+sample <- as.factor(sample)
+
+colorslabel2<-c()
+for(i in sample){
+  colorslabel2 <- c(colorslabel2,colors[name=i])
+}
+
+unique(sample)
+p2<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
 #legend(ts$Y, unique(sample), fill = NULL, col = colorslabel2)
 
 
@@ -747,5 +828,3 @@ plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
 plot(ts$Y,  main="tSNE","cex.main"=2, "cex.lab"=1.5)
 text(ts$Y, labels=connection_events$label[sam], col=colors[connection_events$label[sam]])
 ```
-  --- random forest
-  
