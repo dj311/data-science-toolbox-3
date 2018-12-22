@@ -167,14 +167,9 @@ Sampling 20, 50, 100 rows respectively
 # Sampling 20 rows (with bad results)
 
 ```{r}
-randomforest <- function(training_data, testing_data){
+randomforest <- function(training_data, testing_data, columnname="label"){
       
-    model <- ranger(
-        label~.,
-        data=training_data,
-        classification=TRUE
-    )
-    
+    model <- ranger(dependent.variable.name = columnname, data=training_data, classification=TRUE)
     predictions <- predict(model, data=testing_data)
     
     confusion_matrix <- table(testing_data$label, predictions$predictions)
@@ -332,7 +327,8 @@ for(i in unique(connection_events$type)){
 ```{r}
 nsam = 20
 sam <- simplesampling(connection_events, nsam, columnname = "type")
-connection_events<-
+connection_events$label <- NULL
+connection_events<-randomforest(sam, connection_events[,1:42], columnname = "type")
 confusion_matrix <- randomforest(sam, connection_events[,1:42])
 ```
 ## Sampling 50 rows 
