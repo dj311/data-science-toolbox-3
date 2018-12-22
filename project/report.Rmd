@@ -1,5 +1,5 @@
 ---
-title: "Data Science Toolbox 3: Report"
+title: "Report: Source Code for Simluations and Figure"
 author: "Junfan Huang and Daniel Jones"
 date: "10/12/2018"
 output:
@@ -12,8 +12,9 @@ documentclass: amsart
 monofont: "Source Code Pro"
 ---
 
+Load in any libraries we need, and the data. Running `R --file install.R` should install any missing dependencies.
 
-```{r setup, include=FALSE}
+```{r setup}
 library(caret)
 library(data.table)
 library(e1071)
@@ -25,6 +26,8 @@ library(parallel)
 library(magrittr)
 library(dplyr)
 library(BBmisc)
+library(Rtsne)
+library(ROSE)
 
 set.seed(0xC0FFEE)
 
@@ -32,7 +35,7 @@ knitr::opts_knit$set(root.dir='../')
 knitr::opts_chunk$set(echo=TRUE)
 ```
 
-```{r load_data_set, include=FALSE}
+```{r load_data_set}
 columns <- read.table(
     "./data/kddcup.names",
     sep=":",
@@ -49,7 +52,7 @@ connection_events <- read.csv(
 setDT(connection_events)  # convert from data.frame to data.table
 ```
 
-Set up a common set of k-folds for model validation:
+Set up a common set of k-folds for model validation.
 ```{r eval=FALSE}
 k_folds <- createFolds(connection_events$label, k=10)
 ```
@@ -121,12 +124,16 @@ plot_confusion_matrix <- function(confusion_matrix) {
 
 
 ModelResults <- function(data_transformation_function, k_folds, fold_predictions) {
-    ## Class to save the results from a model test. Takes:
-    ##   data: the data set used (might include extra features,
-    ##      modified encodings etc).
+    ## "Class" to save the results from a model test. Takes:
+    ##
+    ##   data_transformation_function: function which takes in
+    ##      the kdd-99 data and returns a data set ready for
+    ##      the model.
+    ##
     ##   k_folds: a list of "folds", each of which is a list of
     ##     indices pointing to the rows in the data set which
     ##     should be left out.
+    ##
     ##   predictions: the results of running the model against
     ##      the testing set of each fold.
 
@@ -172,7 +179,6 @@ ModelResults <- function(data_transformation_function, k_folds, fold_predictions
 plot_frequency_table <- function(freq_table) {
     colnames(freq_table) <- c('Predicted', 'True', 'Frequency')
 
-    # TODO: fill in gaps
     all_classes <- union(freq_table$Predicted, freq_table$True)
 
     plot <- ggplot(data=freq_table) +
@@ -212,7 +218,7 @@ add_predictions <- function(data, folds, predictions, new_column_name) {
     new_data <- copy(data)
     new_data[[new_column_name]] <- correctly_ordered_predictions
 
-    levels(new_data[[new_column_name]]) <- correctly_ordered_predictions
+    levels(new_data[[new_column_name]]) <- levels(correctly_ordered_predictions)
 
     return(new_data)
 }
@@ -243,575 +249,39 @@ attack_categories <- rbind(
 )
 ```
 
+
+Each of the headings below represents a model, and the code used to generate it's figures. In general, if a model takes a long time to run, we've saved the results, and a code snippet below shows how to load in those results (and skip running the model yourself).
+
+
 # Decision Tree
-
-The code below uses `rpart` for a naive implementation of a decision tree on the KDD-99 data set:
-
-```{r}
-connections <- copy(connection_events)
-
-service_encoder <- dummyVars(~service, data=connections)
-flag_encoder <- dummyVars(~flag, data=connections)
-
-connections <- cbind(
-    connections,
-    as.data.table(predict(service_encoder, newdata=connections)),
-    as.data.table(predict(flag_encoder, newdata=connections))
-)
-
-connections$flag <- NULL
-connections$service <- NULL
-```
-
-```{r eval=FALSE}
-predictions <- mclapply(k_folds, function(fold) {  # approx 15 minutes
-    training_indices <- -fold
-    testing_indices <- fold
-
-    training_data <- connections[training_indices]
-    testing_data <- connections[testing_indices]
-
-    model <- rpart(
-        label~.,  # this data set only contains one-hot-encoded service columns
-        data=training_data,
-        parms=list(split='information'),
-        method='class',
-        control=list(control=list(minsplit=2))
-    )
-
-    predictions <- predict(model, testing_data, type='class')
-
-    return(predictions)
-})
-```
-
-```{r include=FALSE, eval=FALSE}
-saveRDS(
-    predictions,
-    file='./data/daniel-jones-decision-tree-one-hot.rds'
-)
-```
-
-```{r include=FALSE, eval=TRUE}
-predictions <- readRDS(file='./data/daniel-jones-decision-tree-one-hot.rds')
-```
-
-
-```{r}
-testing_labels <- lapply(k_folds, function(fold) connections[fold]$label)
-confusion_matrices <- mapply(
-    make_confusion_matrix,
-    testing_labels,
-    predictions,
-    SIMPLIFY=FALSE
-)
-summary_matrix <- Reduce('+', confusion_matrices)
-plot_log_confusion_matrix(summary_matrix)
-ggsave('./figures/decision-tree-confusion-matrix.png', width=6, height=5)
-```
-
-```{r}
-classification_errors <- get_classification_errors(summary_matrix)
-classification_errors[Frequency >= 10]
-```
-
-```{r}
-total_errors <- sum(classification_errors$Frequency)
-total_errors
-```
-
 
 # Weighted Decision Tree
 
-```{r eval=FALSE}
-decision_tree_transform <- function(data) {
-    connections <- copy(data)
+# K-Means
+## Finding 5 Clusters by Attack Categories
+## Finding 20 Clusters by Attack Type
 
-    # For decision trees, it is useful to one-hot-encode categorical
-    # variables with many potential values. This gives a big speed increase.
-    # I'm not sure why though, the complexity is the same? Probably
-    # does some nice optimisations for binary variables?
+(normalization part)
 
-    service_encoder <- dummyVars(~service, data=connections)
-    flag_encoder <- dummyVars(~flag, data=connections)
+# Embedding 5 cluster k-means in a Decision Tree
 
-    connections <- cbind(
-        connections,
-        as.data.table(predict(service_encoder, newdata=connections)),
-        as.data.table(predict(flag_encoder, newdata=connections))
-    )
+# Embedding 2 cluster k-means in a Decision Tree
 
-    connections$flag <- NULL
-    connections$service <- NULL
+# Random Forest
 
-    return(connections)
-}
+# Undersamping
+## 23 labels
+### Simple Sampling
+### K-Means
+## 4 labels
+### Simple Sampling
+### K-Means
 
-connections <- decision_tree_transform(connection_events)
+# Oversampling
+### Add data from whole data
+### Create data by SMOTE
 
-# This is slow, but clearer than the other ways I could think of:
-number_of_label_occurrences <- sapply(
-    levels(connections$label),
-    function(event_label) nrow(connections[label==event_label])/nrow(connection_events)
-)
-
-fold_predictions <- lapply(k_folds, function(fold) {  # approx 15 minutes
-    print("start")
-    gc()
-
-    training_indices <- -fold
-    testing_indices <- fold
-
-    training_data <- connections[training_indices]
-    testing_data <- connections[testing_indices]
-
-    training_weights <- sapply(training_data$label, function(connection_label) {
-        number_of_occurences <- number_of_label_occurrences[[connection_label]]
-        weight <- 1/number_of_occurences
-        return(weight)
-    })
-
-    model <- rpart(
-        label~.,
-        data=training_data,
-        parms=list(split='information'),
-        method='class',
-        control=list(control=list(minsplit=2)),
-        weights=training_weights
-    )
-
-    predictions <- predict(model, testing_data, type='class')
-
-    return(predictions)
-})
-
-weighted_decision_tree_results <- ModelResults(
-    data_transformation_function=decision_tree_transform,
-    k_folds=k_folds,
-    fold_predictions=fold_predictions
-)
-
-# Save a model for analysis, training it on the whole data set:
-weights <- sapply(connections$label, function(connection_label) {
-    number_of_occurences <- number_of_label_occurrences[[connection_label]]
-    weight <- 1/number_of_occurences
-    return(weight)
-})
-
-weighted_decision_tree_model <- rpart(
-    label~.,
-    data=connections,
-    parms=list(split='information'),
-    method='class',
-    control=list(control=list(minsplit=2)),
-    weights=weights
-)
-```
-
-```{r eval=FALSE, include=FALSE}
-saveRDS(
-    weighted_decision_tree_results,
-    file='./data/daniel-jones-weighted-decision-tree-results.rds'
-)
-saveRDS(
-    weighted_decision_tree_model,
-    file='./data/daniel-jones-weighted-decision-tree-model.rds'
-)
-```
-
-
-```{r eval=TRUE, include=FALSE}
-weighted_decision_tree_results <- readRDS(
-    file='./data/daniel-jones-weighted-decision-tree-results.rds'
-)
-weighted_decision_tree_model <- readRDS(
-    file='./data/daniel-jones-weighted-decision-tree-model.rds'
-)
-```
-
-```{r}
-weighted_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
-ggsave('./figures/weighted-decision-tree-confusion-matrix.png', width=6, height=5)
-
-classification_errors <- get_classification_errors(weighted_decision_tree_results$confusion_matrix(connection_events))
-
-predicted_categories <- sapply(
-    classification_errors$predicted,
-    function(name) attack_categories[attack==name]$category
-)
-true_categories <- sapply(
-    classification_errors$true,
-    function(name) attack_categories[attack==name]$category
-)
-
-classification_errors$predicted_category <- predicted_categories
-classification_errors$true_category <- true_categories
-
-classification_errors[Frequency>=10]
-```
-
-
-```{r}
-total_errors <- sum(classification_errors$Frequency)
-total_errors
-```
-
-
-# Weighted Decision Tree with 5 k-means clusters
-
-This code uses Junfan's k-means clustering to add a new feature which is then fed into the decision tree.
-
-```{r}
-transform_data_for_k_means <- function(data) {
-    data <- copy(data)
-
-    # This code changes strings into number and normalizes the whole data for kmeans classification.
-    data$protocol_type <- as.integer(factor(data$protocol_type))
-    data$label <- NULL
-
-    data <- normalize(
-        data,
-        method="standardize",
-        range=c(0, 1),
-        margin=1L,
-        on.constant="quiet"
-    )
-
-    return(data)
-}
-
-get_clusters <- function(data) {
-    kmeansdata <- transform_data_for_k_means(data)
-
-    # K-means: 5 catogries (Trying to devided the attacks type into
-    # 4 automatically)
-    Cluster <- kmeans(kmeansdata, 5, nstart = 20)
-
-    rm(kmeansdata)
-    gc()
-
-    # Add new feature
-    k_means_cluster <- as.integer(Cluster$`cluster`)
-
-    return(k_means_cluster)
-}
-```
-
-
-```{r eval=FALSE, include=TRUE}
-# This takes > an hour on my laptop, and requires approx 6GB
-# of RAM. Theres a memory leak in here somewhere but I haven't
-# found it - hence the scattering of gc() and rm() calls.
-
-# Output has been saved below so you don't have to run it.
-
-connections <- decision_tree_transform(connection_events)
-
-fold_predictions <- lapply(k_folds, function(fold) { 
-    print("start")
-    gc()
-
-    training_indices <- -fold
-    testing_indices <- fold
-
-    training_data <- connections[training_indices]
-    testing_data <- connections[testing_indices]
-
-    training_weights <- sapply(training_data$label, function(connection_label) {
-        number_of_occurences <- number_of_label_occurrences[[connection_label]]
-        weight <- 1/number_of_occurences
-        return(weight)
-    })
-
-    training_data$k_means_cluster <- get_clusters(training_data)
-    gc()
-
-    model <- rpart(
-        label~.,
-        data=training_data,
-        parms=list(split='information'),
-        method='class',
-        control=list(control=list(minsplit=2)),
-        weights=training_weights
-    )
-
-    testing_data$k_means_cluster <- get_clusters(testing_data)
-    predictions <- predict(model, testing_data, type='class')
-
-    rm(training_data)
-    rm(testing_data)
-
-    return(predictions)
-})
-
-k_means_decision_tree_results <- ModelResults(
-    data_transformation_function=decision_tree_transform,
-    k_folds=k_folds,
-    fold_predictions=fold_predictions
-)
-
-# Save a model for analysis, training it on the whole data set:
-weights <- sapply(connections$label, function(connection_label) {
-    number_of_occurences <- number_of_label_occurrences[[connection_label]]
-    weight <- 1/number_of_occurences
-    return(weight)
-})
-
-connections$k_means_cluster <- get_clusters(connections)
-k_means_decision_tree_model <- rpart(
-    label~.,
-    data=connections,
-    parms=list(split='information'),
-    method='class',
-    control=list(control=list(minsplit=2)),
-    weights=weights
-)
-```
-
-```{r eval=FALSE, include=FALSE}
-saveRDS(
-    k_means_decision_tree_results,
-    file='./data/daniel-jones-k-means-5-decision-tree-results.rds'
-)
-saveRDS(
-    k_means_decision_tree_model,
-    file='./data/daniel-jones-k-means-5-decision-tree-model.rds'
-)
-```
-
-```{r eval=TRUE, include=FALSE}
-k_means_decision_tree_results <- readRDS(
-    file='./data/daniel-jones-k-means-5-decision-tree-results.rds'
-)
-k_means_decision_tree_model <- readRDS(
-    file='./data/daniel-jones-k-means-5-decision-tree-model.rds'
-)
-```
-
-```{r}
-k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
-ggsave('./figures/embedded-k-means-5-confusion-matrix.png', width=6, height=5)
-```
-
-```{r}
-k_means_decision_tree_confusion_matrix <-
-    k_means_decision_tree_results$confusion_matrix(connection_events)
-
-classification_errors <- get_classification_errors(k_means_decision_tree_confusion_matrix)
-classification_errors[Frequency >= 10]
-```
-
-```{r}
-total_errors <- sum(classification_errors$Frequency)
-total_errors
-```
-
-```{r}
-pdf("./figures/embedded-k-means-5-tree.pdf", width=7, height=10)
-
-plot(k_means_decision_tree_model)
-text(k_means_decision_tree_model)
-
-dev.off()
-```
-
-```{r}
-sort(k_means_decision_tree_model$variable.importance)
-```
-
-Here you can see that k-means cluster is able to add information towards rare classes which is then used by the decision tree!
-
-
-# Weighted Decision Tree with 2 k-means clusters classes
-
-From results above it is clear that the vast majority of errors are from false predictions of normal trafffic for truly malicious traffic. This seems to be well distributed across all attack types. Can we use k-means with two clusters and hope that it is able to distinguish normal from non-normal traffic. Note: We planned for this to be done via k-NN so that we could be sure that we were creating clusters for normal and non-normal traffic, however, we had trouble getting the k-NN model to work in R.
-
-
-```{r eval=FALSE}
-# This takes > an hour on my laptop, and requires approx 6GB
-# of RAM. Theres a memory leak in here somewhere but I haven't
-# found it - hence the scattering of gc() and rm() calls.
-
-# Output has been saved below so you don't have to run it.
-
-connections <- decision_tree_transform(connection_events)
-
-fold_predictions <- lapply(k_folds, function(fold) {
-    gc()
-
-    training_indices <- -fold
-    testing_indices <- fold
-
-    training_data <- connections[training_indices]
-    testing_data <- connections[testing_indices]
-
-    training_weights <- sapply(training_data$label, function(connection_label) {
-        number_of_occurences <- number_of_label_occurrences[[connection_label]]
-        weight <- 1/number_of_occurences
-        return(weight)
-    })
-
-    training_data$k_means_cluster <- get_clusters(training_data, 2)
-    gc()
-
-    model <- rpart(
-        label~.,
-        data=training_data,
-        parms=list(split='information'),
-        method='class',
-        control=list(control=list(minsplit=2)),
-        weights=training_weights
-    )
-
-    testing_data$k_means_cluster <- get_clusters(testing_data, 2)
-    predictions <- predict(model, testing_data, type='class')
-
-    rm(training_data)
-    rm(testing_data)
-
-    return(predictions)
-})
-
-k_means_decision_tree_results <- ModelResults(
-    data_transformation_function=decision_tree_transform,
-    k_folds=k_folds,
-    fold_predictions=fold_predictions
-)
-
-# Save a model for analysis, training it on the whole data set:
-weights <- sapply(connections$label, function(connection_label) {
-    number_of_occurences <- number_of_label_occurrences[[connection_label]]
-    weight <- 1/number_of_occurences
-    return(weight)
-})
-
-connections$k_means_cluster <- get_clusters(connections, 2)
-k_means_decision_tree_model <- rpart(
-    label~.,
-    data=connections,
-    parms=list(split='information'),
-    method='class',
-    control=list(control=list(minsplit=2)),
-    weights=weights
-)
-```
-
-```{r eval=FALSE, include=FALSE}
-saveRDS(
-    k_means_decision_tree_results,
-    file='./data/daniel-jones-k-means-2-decision-tree-results.rds'
-)
-saveRDS(
-    k_means_decision_tree_model,
-    file='./data/daniel-jones-k-means-2-decision-tree-model.rds'
-)
-```
-
-```{r eval=TRUE, include=FALSE}
-k_means_decision_tree_results <- readRDS(
-    file='./data/daniel-jones-k-means-2-decision-tree-results.rds'
-)
-k_means_decision_tree_model <- readRDS(
-    file='./data/daniel-jones-k-means-2-decision-tree-model.rds'
-)
-```
-
-
-```{r}
-k_means_decision_tree_results$plot_confusion_matrix(connection_events, log=TRUE)
-ggsave('./figures/embedded-k-means-2-confusion-matrix.png', width=6, height=5)
-```
-
-```{r}
-k_means_decision_tree_confusion_matrix <-
-    k_means_decision_tree_results$confusion_matrix(connection_events)
-
-classification_errors <- get_classification_errors(k_means_decision_tree_confusion_matrix)
-classification_errors[Frequency >= 10]
-```
-
-```{r}
-total_errors <- sum(classification_errors$Frequency)
-total_errors
-```
-
-```{r}
-plot(k_means_decision_tree_model)
-text(k_means_decision_tree_model)
-
-dev.copy(png,"./figures/embedded-k-means-2-tree.png", width=6, height=10)
-dev.off()
-```
-
-```{r}
-sort(k_means_decision_tree_model$variable.importance)
-```
-
-Here you can see that k-means cluster has not been used. Maybe this is because of the greedy algorithm? Or perhaps, the 2-cluster k-means performs badly, and the deicion tree has determined that the feature does not provide sufficent information.
-
-
-# Random Forest on all features
-
-Apply the random forest to all features:
-```{r eval=FALSE}
-confusion_matrices <-lapply(k_folds, function(fold) {  # approx. 25 minutes
-    training_indices <- -fold
-    testing_indices <- fold
-
-    training_data <- connection_events[training_indices]
-    testing_data <- connection_events[testing_indices]
-
-    model <- ranger(
-        label~.,
-        data=training_data,
-        ## automatically selected since the 'label' column is a factor, but
-        ## leave this here for clarity:
-        classification=TRUE,
-        importance='impurity'  # gini index
-    )
-
-    variable_importance <- model$variable.importance
-    predictions <- predict(model, data=testing_data)
-
-    confusion_matrix <- table(testing_data$label, predictions$predictions)
-
-    return(confusion_matrix)
-})
-```
-
-```{r eval=FALSE}
-summary_matrix = Reduce('+', confusion_matrices) # confusion_matrices[[1]] + confusion_matrices[[2]] ... confusion_matrices[[n]]
-summary_matrix
-```
-
-To avoid re-running this everytime, save a copy of the results into a file:
-```{r, eval=FALSE, include=FALSE}
-saveRDS(
-  summary_matrix,
-  file='./data/daniel-jones-random-forest-summary-matrix-all-features.rds'
-)
-```
-
-The load it with:
-```{r, eval=TRUE, include=FALSE}
-summary_matrix <- readRDS(
-  file='./data/daniel-jones-random-forest-summary-matrix-all-features.rds'
-)
-```
-
-Plot the confusion matrix:
-```{r}
-plot_log_confusion_matrix(summary_matrix)
-ggsave('./figures/random-forest-confusion-matrix.png', width=6, height=5)
-```
-
-```{r}
-classification_errors <- get_classification_errors(summary_matrix)
-classification_errors
-```
-
-```{r}
-total_errors <- sum(classification_errors$Frequency)
-total_errors
-```
-
+# Visualization
+### DOS attacks
+### Decision Tree
+### Random forest
