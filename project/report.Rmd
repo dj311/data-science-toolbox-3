@@ -534,6 +534,18 @@ for(i in 1:5){
 model_5
 ```
 
+Here is the details of kmeans data. It doesn't make too much sence.
+
+```{r}
+ksummary <- cbind(
+  as.matrix(summary(kmeans_1$label)),
+  as.matrix(summary(kmeans_2$label)),
+  as.matrix(summary(kmeans_3$label)),
+  as.matrix(summary(kmeans_4$label)),
+  as.matrix(summary(kmeans_5$label))
+)
+ksummary
+```
 
 ## Finding 20 Clusters
 Here, we run k-means looking for categories, to find some features are new which may be really good for finding feature importance. This new data has been named `model_20`:
