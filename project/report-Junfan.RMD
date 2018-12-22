@@ -35,6 +35,7 @@ connection_events <- read.csv(
 )
 
 setDT(connection_events)  # convert from data.frame to data.table
+
 ```
 
 
@@ -169,10 +170,10 @@ Sampling 20, 50, 100 rows respectively
 ```{r}
 randomforest <- function(training_data, testing_data, columnname="label"){
       
-    model <- ranger(dependent.variable.name = columnname, data=training_data, classification=TRUE)
+    eval(parse(text=paste0("model <- ranger(",columnname, "~., data=training_data, classification=TRUE)")))
     predictions <- predict(model, data=testing_data)
     
-    confusion_matrix <- table(testing_data$label, predictions$predictions)
+    confusion_matrix <- table(testing_data[[columnname]], predictions$predictions)
     
     #print accuracy
     print(sum(diag(confusion_matrix))/sum(confusion_matrix))
@@ -185,7 +186,9 @@ simplesampling <- function(connection_events, nsam, columnname="label"){
   sam <- data.frame()
   for(i in unique(connection_events[[columnname]])){
     name = paste0("is_",i)
+    print(name)
     name = get(name)
+    
     if(nrow(name)>=nsam){
       index = sample(c(1:nrow(name)),size=nsam)
       sam <- rbind(sam, name[index,1:42])
@@ -197,6 +200,14 @@ simplesampling <- function(connection_events, nsam, columnname="label"){
   }
   return(sam)
 }
+
+
+str2integer <- function(connection_events) {
+    connection_events$protocol_type <- as.integer(factor(connection_events$protocol_type))
+    connection_events$service <- as.integer(factor(connection_events$service))
+    connection_events$flag <- as.integer(factor(connection_events$flag))
+    return(connection_events)
+}
 ```
 
 ```{r}
@@ -204,7 +215,7 @@ nsam = 20
 # sam: sampling data 
 sam <- simplesampling(connection_events, nsam)
 # sampling variable for training in decision tree and random forests
-confusion_matrix <- randomforest(sam, connection_events[,1:42])
+confusion_matrix <- randomforest(sam, connection_events[,1:42],"label")
 
 ```
 
@@ -228,18 +239,10 @@ confusion_matrix <- randomforest(sam, connection_events[,1:42])
 
 2.K-means
 
-```{r}
-str2integer <- function(connection_events) {
-    connection_events$protocol_type <- as.integer(factor(connection_events$protocol_type))
-    connection_events$service <- as.integer(factor(connection_events$service))
-    connection_events$flag <- as.integer(factor(connection_events$flag))
-    return(connection_events)
-}
-```
 
 ```{r}
 # ktable: K-means sampling data
-ktable <- function(data, nclass, nsam=494020){
+ktable <- function(data, nclass, nsam=494020, columnname="label"){
     data[,1:41] <- normalize(
         data[,1:41], 
         method = "standardize", 
@@ -250,7 +253,7 @@ ktable <- function(data, nclass, nsam=494020){
     index = sample(c(1:nrow(data)),size=nsam)
     sample_events <- data[index,1:42]
     ktable <- data.frame()
-    for(i in unique(data$label)){
+    for(i in unique(data[[columnname]])){
       kmeansdata <- sample_events[which(sample_events[,42]==i),1:41]
       s <- sample_events[which(sample_events[,42]==i),1:42]
       # It's no meaning to do kmeans for data with tiny size
@@ -258,7 +261,7 @@ ktable <- function(data, nclass, nsam=494020){
         #Kmeans
         Cluster <- kmeans(kmeansdata, nclass, nstart = 20)
         centers <- Cluster$centers
-        centers <- cbind(centers, label=rep(i, nclass))
+        eval(parse(text=paste0('centers <- cbind(centers,', columnname, '=rep(i, nclass))')))
         ktable <- rbind(ktable, centers)
       }
       else{
@@ -316,6 +319,7 @@ for(i in 1:length(type[[1]])){
   connection_events$type[which(connection_events$label == name)]<-type[[2]][i]
 }
 connection_events$type[which(is.na(connection_events$type))]<-"normal"
+connection_events$label <- NULL
 for(i in unique(connection_events$type)){
   name <- paste0("is_",i)
   assign(name, connection_events[which(connection_events$type==i)])
@@ -325,27 +329,245 @@ for(i in unique(connection_events$type)){
 # Sampling 20 rows with bad results
 
 ```{r}
+randomforest_type <- function(training_data, testing_data){
+      
+    model <- ranger(type~., data=training_data, classification=TRUE)
+    predictions <- predict(model, data=testing_data)
+    
+    confusion_matrix <- table(testing_data$label, predictions$predictions)
+    
+    #print accuracy
+    print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+    
+    return(confusion_matrix)
+
+}
+
+```
+
+```{r}
 nsam = 20
 sam <- simplesampling(connection_events, nsam, columnname = "type")
-connection_events$label <- NULL
-connection_events<-randomforest(sam, connection_events[,1:42], columnname = "type")
-confusion_matrix <- randomforest(sam, connection_events[,1:42])
+confusion_matrix<-randomforest(sam, connection_events, columnname = "type")
 ```
 ## Sampling 50 rows 
 
 ```{r}
 nsam = 50
 sam <- simplesampling(connection_events, nsam, columnname = "type")
-confusion_matrix <- randomforest(sam, connection_events[,1:42])
+confusion_matrix <- randomforest(sam, connection_events[,1:42],columnname = "type")
+```
+## Sampling 100 rows 
+
+```{r}
+nsam = 100
+sam <- simplesampling(connection_events, nsam, columnname = "type")
+confusion_matrix <- randomforest(sam, connection_events[,1:42],columnname = "type")
+```
+
+## K-means: 4 types
+```{r}
+
+data <- str2integer(connection_events)
+
+nclass = 20
+
+results <- ktable(data, nclass, columnname = "type")
+
+confusion_matrix<-randomforest(results[[1]],results[[2]],columnname = "type")
+
+```
+
+```{r}
+
+data <- str2integer(connection_events)
+
+nclass = 50
+
+results <- ktable(data, nclass, columnname = "type",columnname = "type")
+
+confusion_matrix<-randomforest(results[[1]],results[[2]])
+
+```
+
+```{r}
+
+data <- str2integer(connection_events)
+
+nclass = 100
+
+results <- ktable(data, nclass, columnname = "type")
+
+confusion_matrix<-randomforest(results[[1]],results[[2]],columnname = "type")
+
+```
+Oversampling
+  --- add data from whole data
+  
+The performance of the prediction of probe attacks is the worst one, so we try to find a solution this time. 
+```{r}
+# We only selected probe attacks from whole kdd dataset and kept others connection events. As the process took a long time and might kill computer, we recommond use readRDS to read data we generated.
+# Original data from: http://kdd.ics.uci.edu/databases/kddcup99/kddcup.data.gz
+connection_events <- readRDS(file='./data/resampling_events(add_probe).rds')
+connection_events$type=NULL
 ```
 
 
-Oversampling
-  --- add data from whole data
+```{r}
+k_folds <- createFolds(connection_events$label, k=10)
+```
 
 
+```{r}
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
 
-  --- create data by SMOTE
+confusion_matrix <- randomforest(training_data,testing_data,columnname="label")
+```
+
+--- create data by SMOTE 
+```{r}
+# since some data with 100% accuracy, in order to run faster and improve others performance we selected the data with lower accuracy.
+connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+
+# See their performance
+k_folds <- createFolds(connection_events$label, k=10)
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+confusion_matrix <- randomforest(training_data,testing_data,columnname="label")
+confusion_matrix
+```
+
+As we can see the performance is not really good even for random forest. Now let's use SMOTE to create new data see if it is helpful.
+
+```{r}
+library(ROSE)
+
+# final will be the final data after oversampling
+final=data.frame()
+for(i in unique(connection_events$label)){
+  if(i=="normal."){
+    temp <- connection_events
+    temp2 <- temp[which(temp$label=="normal."),]
+    final=rbind(final,temp2)
+  }
+  else{
+    name = paste0("resample_",i)
+    temp <- connection_events %>% 
+      filter(connection_events$label == "normal." | connection_events$label == i)
+    # N = 194554 then all the data sets have the same size
+    temp <- ovun.sample(label ~ ., data = temp, method="over", N=194554)$data
+    temp2 <- temp[which(temp$label!="normal."),]
+    assign(name,temp) 
+    final=rbind(final,temp2)
+  }
+}
+connection_events=final
+```
+See the performance for the created data.
+```{r}
+# See their performance
+k_folds <- createFolds(connection_events$label, k=10)
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+model <- ranger(
+    label~.,
+    data=training_data,
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
+
+For the original data
+```{r}
+originaldata <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+
+predictions <- predict(model, data=originaldata)
+
+confusion_matrix <- table(originaldata$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+```
+# Oversampling with both real data(the probe attacks from full dataset) and new data with smaller size(created by SMOTE)
+```{r}
+connection_events <- readRDS(file='./data/resampling_events(add_probe).rds')
+connection_events$type=NULL
+# the variable `connection_events1` is used in for{else if{->connection_events1<-}}
+connection_events1=connection_events
+
+connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+final=data.frame()
+for(i in unique(connection_events$label)){
+  if(i=="normal."){
+    temp <- connection_events
+    temp2 <- temp[which(temp$label=="normal."),]
+    final=rbind(final,temp2)
+  }
+  else if(length(which(connection_events1$label== i))>=10000&&length(which(connection_events1$label== i))<=20000){
+    temp <- connection_events1
+    temp2 <- temp[which(temp$label=="normal."),]
+    final=rbind(final,temp)
+  }
+  else{
+    name = paste0("resample_",i)
+    temp <-connection_events %>% 
+      filter(connection_events$label == "normal." | connection_events$label == i)
+    temp <- ovun.sample(label ~ ., data = temp, method="over", N=114554)$data
+    temp2 <- temp[which(temp$label!="normal."),]
+    assign(name,temp)
+    final=rbind(final,temp2)
+  }
+}
+connection_events <- final
+
+# update levels
+
+connection_events$label<-factor(connection_events$label)
+```
+
+See the performance
+
+```{r}
+# See their performance
+k_folds <- createFolds(connection_events$label, k=10)
+training_indices = -k_folds[[1]]
+testing_indices = k_folds[[1]]
+training_data <- connection_events[training_indices]
+testing_data <- connection_events[testing_indices]
+
+model <- ranger(
+    label~.,
+    data=training_data,
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+
+```
 Weight
 Visualization
   --- dos attacks
