@@ -1212,20 +1212,19 @@ The performance of k-means undersampling is terrible!
 
 # Oversampling
 ## Add data from whole data
+## (need to download ../data/resampling_events(add_probe).rds)
   
 The performance of the prediction of probe attacks is the worst one, so we try to find a solution this time. 
 ```{r}
 # We only selected probe attacks from whole kdd dataset and kept others connection events. As the process took a long time and might kill computer, we recommond use readRDS to read data we generated.
 # Original data from: http://kdd.ics.uci.edu/databases/kddcup99/kddcup.data.gz
-connection_events <- readRDS(file='./data/resampling_events(add_probe).rds')
+connection_events <- readRDS(file='../data/resampling_events(add_probe).rds')
 connection_events$type=NULL
 ```
-
 
 ```{r}
 k_folds <- createFolds(connection_events$label, k=10)
 ```
-
 
 ```{r}
 training_indices = -k_folds[[1]]
@@ -1234,12 +1233,13 @@ training_data <- connection_events[training_indices]
 testing_data <- connection_events[testing_indices]
 
 confusion_matrix <- randomforest(training_data,testing_data,columnname="label")
+confusion_matrix
 ```
 ### Create data by SMOTE
 
 ```{r}
 # since some data with 100% accuracy, in order to run faster and improve others performance we selected the data with lower accuracy.
-connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+connection_events <- readRDS(file='../data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
 
 # See their performance
 k_folds <- createFolds(connection_events$label, k=10)
@@ -1252,7 +1252,8 @@ confusion_matrix <- randomforest(training_data,testing_data,columnname="label")
 confusion_matrix
 ```
 
-As we can see the performance is not really good even for random forest. Now let's use SMOTE to create new data see if it is helpful.
+As we can see the performance is not really good even for random forest. 
+Now let's use SMOTE to create new data see if it is helpful.
 
 ```{r}
 # final will be the final data after oversampling
@@ -1274,9 +1275,9 @@ for(i in unique(connection_events$label)){
     final=rbind(final,temp2)
   }
 }
-connection_events=final
+connection_events <- final
 ```
-See the performance for the created data.
+See the performance for the created data.(0.9999159)
 ```{r}
 # See their performance
 k_folds <- createFolds(connection_events$label, k=10)
@@ -1285,7 +1286,7 @@ testing_indices = k_folds[[1]]
 training_data <- connection_events[training_indices]
 testing_data <- connection_events[testing_indices]
 
-model <- ranger(
+model <- ranger(  # about 3 mins
     label~.,
     data=training_data,
     classification=TRUE
@@ -1301,9 +1302,9 @@ print(sum(diag(confusion_matrix))/sum(confusion_matrix))
 
 ```
 
-For the original data
+Test the original data (0.9998536)
 ```{r}
-originaldata <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+originaldata <- readRDS(file='../data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
 
 predictions <- predict(model, data=originaldata)
 
@@ -1313,9 +1314,9 @@ confusion_matrix
 
 print(sum(diag(confusion_matrix))/sum(confusion_matrix))
 ```
-How about create a smaller one
+How about creating a smaller one
 ```{r}
-connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+connection_events <- readRDS(file='../data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
 final=data.frame()
 for(i in unique(connection_events$label)){
   if(i=="normal."){
@@ -1340,7 +1341,7 @@ connection_events <- final
 connection_events$label<-factor(connection_events$label)
 ```
 
-Performance
+Performance (AUC = 0.9998519)
 ```{r}
 k_folds <- createFolds(connection_events$label, k=10)
 training_indices = -k_folds[[1]]
@@ -1364,7 +1365,7 @@ print(sum(diag(confusion_matrix))/sum(confusion_matrix))
 
 ```
 
-For the original data
+Test the original data (0.9998536)
 ```{r}
 predictions <- predict(model, data=originaldata)
 
@@ -1377,14 +1378,14 @@ print(sum(diag(confusion_matrix))/sum(confusion_matrix))
 
 If we compared with the ipsweep, we would find that the errors on ipsweep and nmap disappeared. Also, the performance of predicting ftp_write, multihop, portsweep, etc. increased.(it is worth to create new data for them). However, the ipsweep showed no improvement.
 
-# Oversampling with both real data(the probe attacks from full dataset) and new data with smaller size(created by SMOTE)
+Oversampling with both real data(the probe attacks from full dataset) and new data with smaller size(created by SMOTE)
 ```{r}
-connection_events <- readRDS(file='./data/resampling_events(add_probe).rds')
+connection_events <- readRDS(file='../data/resampling_events(add_probe).rds')
 connection_events$type=NULL
 # the variable `connection_events1` is used in for{else if{->connection_events1<-}}
 connection_events1=connection_events
 
-connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+connection_events <- readRDS(file='../data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
 final=data.frame()
 for(i in unique(connection_events$label)){
   if(i=="normal."){
@@ -1414,7 +1415,7 @@ connection_events <- final
 connection_events$label<-factor(connection_events$label)
 ```
 
-See the performance
+Look the performance
 
 ```{r}
 # See their performance
@@ -1424,7 +1425,7 @@ testing_indices = k_folds[[1]]
 training_data <- connection_events[training_indices]
 testing_data <- connection_events[testing_indices]
 
-model <- ranger(
+model <- ranger(   # about 6 mins
     label~.,
     data=training_data,
     classification=TRUE
@@ -1451,13 +1452,13 @@ confusion_matrix
 print(sum(diag(confusion_matrix))/sum(confusion_matrix))
 
 ```
-For ipsweep, the performance still not ideal.
+As for ipsweep, the performance still not ideal.
 
 
 ### Weight
 Now this part, we will try to change the class weights for random forest and see if the porformance will improve.
 
-```
+```{r}
 weights <-c()
 for(i in unique(connection_events$label)){
   weights <- c(weights, length(connection_events$label)/length(which(connection_events$label==i)))
@@ -1469,7 +1470,7 @@ testing_indices = k_folds[[1]]
 training_data <- connection_events[training_indices]
 testing_data <- connection_events[testing_indices]
 
-model <- ranger(
+model <- ranger(  # about 10 mins
       label~.,
       data=training_data,
       class.weights = weights,
@@ -1493,7 +1494,7 @@ Some parts improved, like portweep, rootkit, etc. It seems like the results are 
 So let's look the data distribution in 2 dimensions.
 ### DOS attacks
 
-This part needs a package named Rtsne
+This part needs a package named Rtsne (about 6 mins)
 ```{r}
 sam <- sample(389255,40000)
 # is_dos is created by 4 type undersampling part
@@ -1505,7 +1506,6 @@ sample<-factor(sample)
 ## for plotting
 colors = rainbow(length(unique(sample)))
 names(colors) = levels(sample)
-colors
 colorslabel<-c()
 for(i in sample){
   colorslabel <- c(colorslabel,colors[name=i])
@@ -1595,7 +1595,7 @@ dev.off()
   
 ```{r}
 
-model_rf <- ranger(
+model_rf <- ranger( # about 1 min
     label~.,
     data=training_data,
     ## automatically selected since the 'label' column is a factor, but
@@ -1624,7 +1624,7 @@ for(i in connection_events$label[sam]){
 
 ts <- Rtsne(connection_events[sam,-42], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates=FALSE)
 # real label
-p1<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
+plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
 
 
 # plot prediction label
@@ -1636,8 +1636,7 @@ for(i in sample){
   colorslabel2 <- c(colorslabel2,colors[name=i])
 }
 
-unique(sample)
-p2<-plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
+plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
 
 
 # try to add legend..
@@ -1646,7 +1645,7 @@ text(ts$Y, labels=connection_events$label[sam], col=colors[connection_events$lab
 ```
 See the weekness part
 ```{r}
-connection_events <- readRDS(file='./data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
+connection_events <- readRDS(file='../data/data_without_smurf_neptune_and_high_accuracy_attacks.rds')
 
 samples <- createFolds(connection_events$label, k=100)
 
