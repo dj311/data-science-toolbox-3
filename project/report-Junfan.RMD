@@ -313,8 +313,6 @@ ktable <- function(data, nclass, nsam=494020){
       s <- sample_events[which(sample_events[,42]==i),1:42]
       # It's no meaning to do kmeans for tiny size
       if(nrow(s)>nclass+100){
-        #Kmeans
-        print(i)
         Cluster <- kmeans(kmeansdata, nclass, nstart = 20)
         centers <- Cluster$centers
         centers <- cbind(centers, label=rep(i, nclass))
