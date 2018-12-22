@@ -319,11 +319,12 @@ for(i in 1:length(type[[1]])){
   connection_events$type[which(connection_events$label == name)]<-type[[2]][i]
 }
 connection_events$type[which(is.na(connection_events$type))]<-"normal"
-connection_events$label <- NULL
 for(i in unique(connection_events$type)){
   name <- paste0("is_",i)
   assign(name, connection_events[which(connection_events$type==i)])
 }
+connection_events$label <- NULL
+
 ```
 
 # Sampling 20 rows with bad results
@@ -635,18 +636,116 @@ print(sum(diag(confusion_matrix))/sum(confusion_matrix))
 
 
 ```{r}
-predictions <- predict(model, data=testing_data)
+predictions <- predict(model, data=originaldata)
 
-confusion_matrix <- table(testing_data$label, predictions$predictions)
+confusion_matrix <- table(originaldata$label, predictions$predictions)
 
 confusion_matrix
 
 print(sum(diag(confusion_matrix))/sum(confusion_matrix))
 
 ```
+For ipsweep, the performance still not ideal.
+
+## Now this part, we will try the class weight for random forest
 Weight
+
+
+## So let's look the data distribution in 2 dimensions.
 Visualization
   --- dos attacks
-  --- decision tree
+This part needs a package named Rtsne
+```{r}
+library(Rtsne)
+
+```
+
+
+```{r}
+sam <- sample(389255,40000)
+# is_dos is created by 4 type undersampling part
+is_dos$type <-NULL
+is_dos$label<- factor(is_dos$label)
+sample <- is_dos[sam]$label
+
+sample<-factor(sample)
+## for plotting
+colors = rainbow(length(unique(sample)))
+names(colors) = levels(sample)
+colors
+colorslabel<-c()
+for(i in sample){
+  colorslabel <- c(colorslabel,colors[name=i])
+}
+
+ts <- Rtsne(is_dos[sam,-42], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates=FALSE)
+
+
+plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
+
+```
+
+--- decision tree
+
+```{r}
+#connection_events <- load()
+samples <- createFolds(connection_events$label, k=100)
+
+training_indices = -samples[[1]]
+testing_indices = samples [[1]]
+
+training_data <- connections[training_indices]
+testing_data <- connections[testing_indices]
+
+model <- rpart(
+    label~.,  # this data set only contains one-hot-encoded service columns
+    data=training_data,
+    parms=list(split='information'),
+    method='class',
+    control=list(control=list(minsplit=2))
+)
+
+predictions <- predict(model, testing_data, type='class')
+
+```
+
+```{r}
+data <- predictions
+
+sam <- testing_indices
+
+connection_events$label[sam] <- as.factor(connection_events$label[sam])
+## for plotting
+colors = rainbow(length(unique(connection_events$label[sam])))
+names(colors) = unique(connection_events$label[sam])
+colorslabel<-c()
+for(i in connection_events$label[sam]){
+  colorslabel <- c(colorslabel,colors[name=i])
+}
+
+# Rtne process got two dimensions in ts and saved in ts$data
+ts <- Rtsne(connection_events[sam,-42], dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates=FALSE)
+# real label
+plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel)
+
+
+# plot predicted label
+sample <- data
+sample <- as.factor(sample)
+
+colorslabel2<-c()
+for(i in sample){
+  colorslabel2 <- c(colorslabel2,colors[name=i])
+}
+
+unique(sample)
+plot(ts$Y, pch=16, cex=.3, xaxt='n', yaxt='n', ann=FALSE, col=colorslabel2)
+#legend(ts$Y, unique(sample), fill = NULL, col = colorslabel2)
+
+
+# try to add legend..
+plot(ts$Y,  main="tSNE","cex.main"=2, "cex.lab"=1.5)
+text(ts$Y, labels=connection_events$label[sam], col=colors[connection_events$label[sam]])
+```
   --- random forest
   
