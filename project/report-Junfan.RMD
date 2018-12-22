@@ -1,3 +1,4 @@
+
 ```{r setup, include=FALSE}
 library(caret)
 library(data.table)
@@ -60,9 +61,16 @@ Example below with random forests.
 
 
 ```{r}
-connection_events$protocol_type <- as.integer(factor(connection_events$protocol_type))
-connection_events$service <- as.integer(factor(connection_events$service))
-connection_events$flag <- as.integer(factor(connection_events$flag))
+str2integer <- function(connection_events) {
+    connection_events$protocol_type <- as.integer(factor(connection_events$protocol_type))
+    connection_events$service <- as.integer(factor(connection_events$service))
+    connection_events$flag <- as.integer(factor(connection_events$flag))
+    return(connection_events)
+}
+```
+
+```{r}
+connection_events <- load_data()
 kmeansdata <- connection_events[,1:41]
 kmeansdata <- normalize(kmeansdata, method = "standardize", range = c(0, 1), margin = 1L, on.constant = "quiet")
 ```
@@ -120,3 +128,301 @@ model20 <- model_20[,c(42:62)]
 k_folds <- createFolds(model_20$label, k=10)
 ```
 
+
+Undersamping: to solve imbalanced issue
+Outline:
+23 labels
+  --- simple sampling
+  --- kmeans
+4 types
+  --- simple sampling
+  --- kmeans
+## 23 labels
+1. Simple sampling
+
+## Pre-process
+
+```{r}
+sampledata <- connection_events
+for(i in unique(sampledata$label)){
+  name = paste0("is_",i)
+  sampledata[[name]] <- ((sampledata$label == i)+0)
+}
+# 23 new variables used for sampling
+for(i in unique(sampledata$label)){
+  name = paste0("is_",i)
+  columnname = paste0("is_",i)
+  assign(name, sampledata[sampledata[[columnname]]==1])
+}
+```
+
+```{r}
+saveRDS(connection_events, file='./data/add-23-features-named-is_normal-is_smurf-etc.rds')
+```
+
+```{r}
+sampledata <- readRDS(file='./data/add-23-features-named-is_normal-is_smurf-etc.rds')
+```
+
+Sampling 20, 50, 100 rows respectively
+# Sampling 20 rows (with bad results)
+
+```{r}
+nsam = 20
+# sam: sampling data 
+sam <- data.frame()
+for(i in unique(connection_events$label)){
+  name = paste0("is_",i)
+  name = get(name)
+  if(nrow(name)>=20){
+    index = sample(c(1:nrow(name)),size=nsam)
+    sam <- rbind(sam, name[index,1:42])
+  }
+  else{
+    index = sample(c(1:nrow(name)),size=nrow(name))
+    sam <- rbind(sam, name[index,1:42])
+  }
+}
+# sampling variable for training in decision tree and random forests
+```
+
+## Check the performance in random forest: test all the KDD_data_10_percent
+
+```{r}
+training_data <- sam
+testing_data <- connection_events[,1:42]
+
+model <- ranger(
+    label~.,
+    data=training_data,
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+confusion_matrix
+#print accuracy
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+```
+
+# Sampling 50 rows (with bad results)
+
+```{r}
+nsam = 50
+sam <- data.frame()
+for(i in unique(connection_events$label)){
+  name = paste0("is_",i)
+  name = get(name)
+  if(nrow(name)>=nsam){
+    index = sample(c(1:nrow(name)),size=nsam)
+    sam <- rbind(sam, name[index,1:42])
+  }
+  else{
+    index = sample(c(1:nrow(name)),size=nrow(name))
+    sam <- rbind(sam, name[index,1:42])
+  }
+}
+sam
+# sampling variable for training in random forests
+```
+## Random forests 
+```{r}
+training_data <- sam
+testing_data <- connection_events[,1:42]
+
+model <- ranger(
+    label~.,
+    data=training_data,
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+```
+# Sampling 100 rows
+```{r}
+nsam = 100
+sam <- data.frame()
+for(i in unique(connection_events$label)){
+  name = paste0("is_",i)
+  name = get(name)
+  if(nrow(name)>=nsam){
+    index = sample(c(1:nrow(name)),size=nsam)
+    sam <- rbind(sam, name[index,1:42])
+  }
+  else{
+    index = sample(c(1:nrow(name)),size=nrow(name))
+    sam <- rbind(sam, name[index,1:42])
+  }
+}
+# sampling variable for training in random forests
+```
+## Random forests 
+```{r}
+training_data <- sam
+testing_data <- connection_events[,1:42]
+
+model <- ranger(
+    label~.,
+    data=training_data,
+    classification=TRUE
+)
+
+predictions <- predict(model, data=testing_data)
+
+confusion_matrix <- table(testing_data$label, predictions$predictions)
+
+confusion_matrix
+
+print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+```
+
+2.K-means
+
+```{r}
+str2integer <- function(connection_events) {
+    connection_events$protocol_type <- as.integer(factor(connection_events$protocol_type))
+    connection_events$service <- as.integer(factor(connection_events$service))
+    connection_events$flag <- as.integer(factor(connection_events$flag))
+    return(connection_events)
+}
+```
+
+```{r}
+# ktable: K-means sampling data
+ktable <- function(data, nclass, nsam=494020){
+    data[,1:41] <- normalize(
+        data[,1:41], 
+        method = "standardize", 
+        range = c(0, 1), 
+        margin = 1L, 
+        on.constant = "quiet"
+    )
+    index = sample(c(1:nrow(data)),size=nsam)
+    sample_events <- data[index,1:42]
+    ktable <- data.frame()
+    for(i in unique(data$label)){
+      kmeansdata <- sample_events[which(sample_events[,42]==i),1:41]
+      s <- sample_events[which(sample_events[,42]==i),1:42]
+      # It's no meaning to do kmeans for tiny size
+      if(nrow(s)>nclass+100){
+        #Kmeans
+        print(i)
+        Cluster <- kmeans(kmeansdata, nclass, nstart = 20)
+        centers <- Cluster$centers
+        centers <- cbind(centers, label=rep(i, nclass))
+        ktable <- rbind(ktable, centers)
+      }
+      else{
+        #Kmeans
+        ktable <- rbind(ktable, s)
+      }
+      
+    }
+    return(list(ktable,data))
+}
+
+training_undersampling <- function(results){
+    training_data <- results[[1]]
+    testing_data <- results[[2]]
+    
+    model <- ranger(
+        label~.,
+        data=training_data,
+        classification=TRUE
+    )
+    
+    predictions <- predict(model, data=testing_data)
+    
+    confusion_matrix <- table(testing_data$label, predictions$predictions)
+    
+    print(sum(diag(confusion_matrix))/sum(confusion_matrix))
+    
+    return(confusion_matrix)
+}
+```
+
+## K-means: 23 attacks
+## select 20 centers for data has a big size
+```{r}
+data <- str2integer(connection_events)
+
+nclass = 20
+
+results <- ktable(data, nclass)
+confusion_matrix<-training_undersampling(results)
+
+```
+
+## select 50 centers
+```{r}
+nclass = 50
+results <- ktable(data, nclass)
+confusion_matrix<-training_undersampling(results)
+```
+## select 100 centers
+```{r}
+nclass = 100
+results <- ktable(data, nclass)
+confusion_matrix<-training_undersampling(results)
+```
+
+
+
+Undersampling 
+4 types
+```{r add features with types}
+type <- read.table(
+  "http://kdd.ics.uci.edu/databases/kddcup99/training_attack_types",
+  sep=" ",
+  skip=1,
+  as.is=T
+)
+setDT(type)  # convert from data.frame to data.table
+
+for(i in 1:length(type[[1]])){
+  name = paste0(type[[1]][i],".")
+  connection_events$type[which(connection_events$label == name)]<-type[[2]][i]
+}
+connection_events$type[which(is.na(connection_events$type))]<-"normal"
+unique(connection_events$type)
+connection_events
+```
+
+# Sampling 20 rows with bad results
+
+```{r}
+nsam = 20
+sam <- data.frame()
+for(i in unique(connection_events$type)){
+  name = paste0("is_",i)
+  name = get(name)
+  if(nrow(name)>=20){
+    index = sample(c(1:nrow(name)),size=nsam)
+    sam <- rbind(sam, name[index,1:42])
+  }
+  else{
+    index = sample(c(1:nrow(name)),size=nrow(name))
+    sam <- rbind(sam, name[index,1:42])
+  }
+}
+```
+
+Oversampling
+  --- add data from whole data
+  
+
+  --- create data by SMOTE
+Weight
+Visualization
+  --- dos attacks
+  --- decision tree
+  --- random forest
+  
